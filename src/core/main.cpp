@@ -296,6 +296,11 @@ int main(int argc, const char** argv) {
 
    g_argc = argc;
    g_argv = argv;
+#if defined(__EMSCRIPTEN__) && !defined(__wasm64__)
+   // With Asyncify (wasm32), SDL's waits (SDL_Delay, its spinlocks' backoff) would suspend from any thread, through
+   // frames the build doesn't instrument (CMakeLists_app.txt). Only VPX's own waits suspend, with emscripten_sleep.
+   SDL_SetHint(SDL_HINT_EMSCRIPTEN_ASYNCIFY, "0");
+#endif
    const int ret = WinMain(NULL, NULL, NULL, 0);
 #ifdef __EMSCRIPTEN__
    // With Asyncify, the page's callMain returns at the player's first wait: tell the page when main ends (shell.html)

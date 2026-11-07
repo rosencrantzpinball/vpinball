@@ -652,7 +652,11 @@ void Player::InitTableSession(const bool isInitial)
       for (int i = 0; i < 3; i++)
       {
          ProcessOSMessages();
+#if defined(__EMSCRIPTEN__) && !defined(__wasm64__)
+         emscripten_sleep(10); // Return to the browser, which SDL_Delay doesn't do with Asyncify (main.cpp)
+#else
          SDL_Delay(10);
+#endif
       }
       m_pininput.SetAcceptStartupEvents(false);
       bool leftFlipPressed = m_pininput.IsPressed(m_pininput.GetLeftFlipperActionId());
@@ -901,6 +905,11 @@ void Player::InitTableSession(const bool isInitial)
       bool showLoadingUI = false;
       while (pool.has_work_in_flight())
       {
+#if defined(__EMSCRIPTEN__) && !defined(__wasm64__)
+         // Return to the browser each pass, which SDL's waits don't do with Asyncify (main.cpp): the loading threads'
+         // file accesses and the page's own events are served there
+         emscripten_sleep(0);
+#endif
          ProcessOSMessages();
          if (showLoadingUI)
          {
