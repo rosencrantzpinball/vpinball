@@ -14,6 +14,7 @@
 #endif
 #include "FreeImage.h"
 #ifdef __EMSCRIPTEN__
+#include <libpng/png.h>
 #include <webp/decode.h>
 #endif
 
@@ -155,6 +156,100 @@ static std::shared_ptr<BaseTexture> CreateFromWebPDownsized(const void* data, co
    tex->m_realHeight = height;
    return tex;
 }
+
+// A non-interlaced PNG image larger than maxTexDim, read a row at a time and averaged down to the size CreateFromFreeImage
+// would downsize it to, so the full image is never held, or nullptr for anything else
+static std::shared_ptr<BaseTexture> CreateFromPngDownsized(const void* data, const size_t size, const bool isImageData, const unsigned int maxTexDim)
+{
+   const uint8_t* const bytes = static_cast<const uint8_t*>(data);
+   if (size < 33 || png_sig_cmp(bytes, 0, 8) != 0 || memcmp(bytes + 12, "IHDR", 4) != 0 || bytes[28] != 0) // bytes[28]: interlace method
+      return nullptr;
+   const unsigned int width = (bytes[16] << 24) | (bytes[17] << 16) | (bytes[18] << 8) | bytes[19];
+   const unsigned int height = (bytes[20] << 24) | (bytes[21] << 16) | (bytes[22] << 8) | bytes[23];
+   if ((width <= maxTexDim && height <= maxTexDim) || width == 0 || height == 0)
+      return nullptr;
+   unsigned int newWidth = max(min(width, maxTexDim), MIN_TEXTURE_SIZE), newHeight = max(min(height, maxTexDim), MIN_TEXTURE_SIZE);
+   if (width - newWidth > height - newHeight)
+      newHeight = min(height * newWidth / width, maxTexDim);
+   else
+      newWidth = min(width * newHeight / height, maxTexDim);
+
+   struct Reader { const uint8_t* next; size_t left; } reader { bytes, size };
+   // libpng's error handler must not return: it throws, and the decode is abandoned below
+   png_structp png = png_create_read_struct(PNG_LIBPNG_VER_STRING, nullptr,
+      [](png_structp, png_const_charp message) { throw std::runtime_error(message); }, [](png_structp, png_const_charp) { });
+   png_infop info = png ? png_create_info_struct(png) : nullptr;
+   std::shared_ptr<BaseTexture> tex;
+   try
+   {
+      if (info == nullptr)
+         throw std::runtime_error("out of memory");
+      png_set_read_fn(png, &reader, [](png_structp p, png_bytep out, png_size_t n)
+         {
+            Reader* const r = static_cast<Reader*>(png_get_io_ptr(p));
+            if (n > r->left)
+               png_error(p, "truncated");
+            memcpy(out, r->next, n);
+            r->next += n;
+            r->left -= n;
+         });
+      png_read_info(png, info);
+      png_set_expand(png); // Palette to RGB, gray under 8 bits to 8, transparency chunk to alpha
+      png_set_strip_16(png);
+      png_set_gray_to_rgb(png);
+      png_read_update_info(png, info);
+      const unsigned int channels = png_get_channels(png, info);
+      if ((channels != 3 && channels != 4) || png_get_bit_depth(png, info) != 8)
+         throw std::runtime_error("unexpected format");
+      const bool alpha = channels == 4;
+      tex = BaseTexture::Create(newWidth, newHeight, isImageData ? (alpha ? BaseTexture::SRGBA : BaseTexture::SRGB) : (alpha ? BaseTexture::RGBA : BaseTexture::RGB));
+      if (tex == nullptr)
+         throw std::runtime_error("out of memory");
+      // Each output texel averages the input texels that fall in it (box filter)
+      vector<uint8_t> row(png_get_rowbytes(png, info));
+      vector<unsigned int> columnOf(width), sums(static_cast<size_t>(newWidth) * channels), counts(newWidth);
+      for (unsigned int x = 0; x < width; x++)
+         columnOf[x] = static_cast<unsigned int>(static_cast<uint64_t>(x) * newWidth / width);
+      uint8_t* const out = static_cast<uint8_t*>(tex->data());
+      auto flush = [&](unsigned int dy)
+      {
+         uint8_t* d = out + static_cast<size_t>(dy) * newWidth * channels;
+         for (unsigned int dx = 0; dx < newWidth; dx++)
+            for (unsigned int c = 0; c < channels; c++)
+               *d++ = counts[dx] ? static_cast<uint8_t>((sums[dx * channels + c] + counts[dx] / 2) / counts[dx]) : 0;
+         std::fill(sums.begin(), sums.end(), 0u);
+         std::fill(counts.begin(), counts.end(), 0u);
+      };
+      unsigned int currentRow = 0;
+      for (unsigned int y = 0; y < height; y++)
+      {
+         png_read_row(png, row.data(), nullptr);
+         const unsigned int dy = static_cast<unsigned int>(static_cast<uint64_t>(y) * newHeight / height);
+         if (dy != currentRow)
+         {
+            flush(currentRow);
+            currentRow = dy;
+         }
+         const uint8_t* src = row.data();
+         for (unsigned int x = 0; x < width; x++)
+         {
+            const unsigned int dx = columnOf[x];
+            for (unsigned int c = 0; c < channels; c++)
+               sums[dx * channels + c] += *src++;
+            counts[dx]++;
+         }
+      }
+      flush(currentRow);
+      tex->m_realWidth = width;
+      tex->m_realHeight = height;
+   }
+   catch (const std::exception&)
+   {
+      tex = nullptr;
+   }
+   png_destroy_read_struct(&png, info ? &info : nullptr, nullptr);
+   return tex;
+}
 #endif
 
 std::shared_ptr<BaseTexture> BaseTexture::CreateFromData(const void* data, const size_t size, const bool isImageData, unsigned int maxTexDimension, bool resizeOnLowMem) noexcept
@@ -170,6 +265,10 @@ std::shared_ptr<BaseTexture> BaseTexture::CreateFromData(const void* data, const
    // capped size instead
    if (maxTexDimension > 0 && !resizeOnLowMem)
       if (tex = CreateFromWebPDownsized(data, size, isImageData, maxTexDimension); tex != nullptr)
+         return tex;
+   // The same for a PNG image, read a row at a time
+   if (maxTexDimension > 0 && !resizeOnLowMem)
+      if (tex = CreateFromPngDownsized(data, size, isImageData, maxTexDimension); tex != nullptr)
          return tex;
 #endif
 
@@ -221,9 +320,27 @@ std::shared_ptr<BaseTexture> BaseTexture::CreateFromData(const void* data, const
          return nullptr;
       }
       // Load
-      FIBITMAP * const dib = FreeImage_LoadFromMemory(fif, dataHandle, (fif == FIF_PNG ? PNG_IGNOREGAMMA : 0) | (fif == FIF_EXR ? EXR_ALLOW_FOR_FP16 : 0));
+      int flags = (fif == FIF_PNG ? PNG_IGNOREGAMMA : 0) | (fif == FIF_EXR ? EXR_ALLOW_FOR_FP16 : 0);
+#ifdef __EMSCRIPTEN__
+      // A JPEG image larger than the texture cap is decoded at a half, a quarter or an eighth of its size (FreeImage's
+      // requested size: the smallest of these at or above the cap), as decoding it at full size first would need a buffer
+      // as large as the full image, which the wasm heap would keep
+      int jpegWidth = 0, jpegHeight = 0, jpegChannels = 0;
+      if (fif == FIF_JPEG && maxTexDimension > 0 && !resizeOnLowMem
+         && stbi_info_from_memory(static_cast<stbi_uc const*>(data), static_cast<int>(size), &jpegWidth, &jpegHeight, &jpegChannels)
+         && static_cast<unsigned int>(max(jpegWidth, jpegHeight)) >= 2 * maxTexDimension)
+         flags |= static_cast<int>(maxTexDimension) << 16;
+#endif
+      FIBITMAP * const dib = FreeImage_LoadFromMemory(fif, dataHandle, flags);
       FreeImage_CloseMemory(dataHandle);
       tex = dib ? BaseTexture::CreateFromFreeImage(dib, isImageData, maxTexDimension, resizeOnLowMem) : nullptr;
+#ifdef __EMSCRIPTEN__
+      if (tex && (flags >> 16) != 0)
+      {
+         tex->m_realWidth = jpegWidth;
+         tex->m_realHeight = jpegHeight;
+      }
+#endif
    }
 
    #ifdef __OPENGLES__
