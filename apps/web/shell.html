@@ -123,6 +123,13 @@ html, body { margin: 0; height: 100%; background: #000; overflow: hidden; font-f
 </div>
 <template id="vpinballScript">{{{ SCRIPT }}}</template>
 <script>
+const WEB_BUILD = '@VPX_WEB_BUILD@'; // 'JSPI' or 'ASYNCIFY', set by CMake (make/CMakeLists_app.txt)
+// Browsers without JSPI or 64-bit memory go to the Asyncify build
+const switchingBuild = WEB_BUILD === 'JSPI' && !(typeof WebAssembly.Suspending === 'function'
+   && WebAssembly.validate(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0, 5, 3, 1, 4, 1]))); // a module with a 64-bit memory
+if (switchingBuild)
+   location.replace('compat/vpinball.html' + location.search);
+
 const args = new URLSearchParams(location.search).getAll('arg');
 const picker = document.getElementById('picker');
 const statusEl = document.getElementById('status');
@@ -218,6 +225,8 @@ async function loadWasm(imports) {
 }
 
 async function crossOriginIsolate() {
+   if (switchingBuild)
+      return 'reloading';
    if (crossOriginIsolated) {
       sessionStorage.removeItem('isolating');
       return 'isolated';
@@ -355,7 +364,9 @@ async function saveTableFolder() {
 
 async function startPlayer(mainArgs) {
    const timer = setInterval(() => syncPrefs(false), 10000);
-   await Module.callMain(mainArgs);
+   const ended = new Promise((resolve) => (Module.onMainReturned = resolve));
+   const ret = Module.callMain(mainArgs);
+   await (WEB_BUILD === 'JSPI' ? ret : ended);
    clearInterval(timer);
    await syncPrefs(false);
    await saveTableFolder();

@@ -296,6 +296,11 @@ int main(int argc, const char** argv) {
 
    g_argc = argc;
    g_argv = argv;
-   return WinMain(NULL, NULL, NULL, 0);
+   const int ret = WinMain(NULL, NULL, NULL, 0);
+#ifdef __EMSCRIPTEN__
+   // With Asyncify, the page's callMain returns at the player's first wait: tell the page when main ends (shell.html)
+   EM_ASM({ if (Module['onMainReturned']) Module['onMainReturned']($0); }, ret);
+#endif
+   return ret;
 }
 #endif
