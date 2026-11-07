@@ -877,7 +877,8 @@ void Player::InitTableSession(const bool isInitial)
                   if ((image->m_width > buffer->width()) || (image->m_height > buffer->height()))
                   {
                      PLOG(buffer->m_resizedOnLowMem ? plog::Severity::error : plog::Severity::info) << "Image '" << image->m_name << "' was downsized from " << image->m_width << 'x' << image->m_height << " to " << buffer->width() << 'x' << buffer->height()
-                        << (buffer->m_resizedOnLowMem ? " due to low memory " : " due to user settings");
+                        << (buffer->m_resizedOnLowMem ? " due to low memory "
+                           : (image->m_width < buffer->width() + 4 && image->m_height < buffer->height() + 4) ? " to fit the 4x4 blocks of texture compression" : " due to user settings");
                      if (buffer->m_resizedOnLowMem)
                         m_liveUI->PushNotification("Image '" + image->m_name + "' was downsized due to low memory", 5000);
                   }

@@ -246,6 +246,53 @@ namespace
       }
    }
 
+   // A copy of an 8-bit RGB or RGBA texture resampled (bilinear) to the multiples of 4 just below its size, for the
+   // renderers that only take block-compressed textures whose sizes are multiples of the 4x4 blocks
+   std::shared_ptr<BaseTexture> ResampleToBlocks(const BaseTexture& tex)
+   {
+      unsigned int bpp;
+      switch (tex.m_format)
+      {
+      case BaseTexture::RGB:
+      case BaseTexture::SRGB: bpp = 3; break;
+      case BaseTexture::RGBA:
+      case BaseTexture::SRGBA: bpp = 4; break;
+      default: return nullptr;
+      }
+      const unsigned int sw = tex.width(), sh = tex.height(), w = sw & ~3u, h = sh & ~3u;
+      std::shared_ptr<BaseTexture> out = BaseTexture::Create(w, h, tex.m_format);
+      if (out == nullptr || out->data() == nullptr)
+         return nullptr;
+      const uint8_t* const src = static_cast<const uint8_t*>(tex.datac());
+      uint8_t* dst = static_cast<uint8_t*>(out->data());
+      const float scaleX = static_cast<float>(sw) / static_cast<float>(w), scaleY = static_cast<float>(sh) / static_cast<float>(h);
+      for (unsigned int y = 0; y < h; y++)
+      {
+         const float fy = max(0.f, (static_cast<float>(y) + 0.5f) * scaleY - 0.5f);
+         const unsigned int y0 = min(static_cast<unsigned int>(fy), sh - 1), y1 = min(y0 + 1, sh - 1);
+         const float ty = fy - static_cast<float>(y0);
+         const uint8_t* const row0 = src + static_cast<size_t>(y0) * sw * bpp;
+         const uint8_t* const row1 = src + static_cast<size_t>(y1) * sw * bpp;
+         for (unsigned int x = 0; x < w; x++)
+         {
+            const float fx = max(0.f, (static_cast<float>(x) + 0.5f) * scaleX - 0.5f);
+            const unsigned int x0 = min(static_cast<unsigned int>(fx), sw - 1), x1 = min(x0 + 1, sw - 1);
+            const float tx = fx - static_cast<float>(x0);
+            for (unsigned int c = 0; c < bpp; c++)
+            {
+               const float top = static_cast<float>(row0[x0 * bpp + c]) + tx * static_cast<float>(row0[x1 * bpp + c] - row0[x0 * bpp + c]);
+               const float bottom = static_cast<float>(row1[x0 * bpp + c]) + tx * static_cast<float>(row1[x1 * bpp + c] - row1[x0 * bpp + c]);
+               *dst++ = static_cast<uint8_t>(top + ty * (bottom - top) + 0.5f);
+            }
+         }
+      }
+      out->SetName(tex.GetName());
+      out->m_realWidth = tex.m_realWidth;
+      out->m_realHeight = tex.m_realHeight;
+      out->m_resizedOnLowMem = tex.m_resizedOnLowMem;
+      return out;
+   }
+
    }
 
    bgfx::TextureFormat::Enum TextureCompressor::SelectFormatFor(BaseTexture::Format srcFormat, bool opaque, unsigned int width, unsigned int height)
@@ -723,6 +770,15 @@ std::shared_ptr<const BaseTexture> TextureCompressor::Load(Texture* image, bool 
    }
    if (buffer == nullptr)
       buffer = image->GetRawBitmap(resizeOnLowMem, m_maxTexDim);
+   // WebGPU only takes block-compressed textures whose sizes are multiples of the 4x4 blocks: resample others to the
+   // multiples just below (at most 3 texels less each way) so they are compressed like the rest, instead of staying
+   // uncompressed at 4 bytes a texel
+   if (buffer && buffer->m_compressed == nullptr && bgfx::getRendererType() == bgfx::RendererType::WebGPU && ((buffer->width() | buffer->height()) & 3) != 0
+      && buffer->width() >= 64 && buffer->height() >= 64 && buffer->datac() != nullptr && (!isCompressionDiscarded || !isCompressionDiscarded()))
+   {
+      if (std::shared_ptr<BaseTexture> aligned = ResampleToBlocks(*buffer); aligned != nullptr)
+         buffer = std::move(aligned);
+   }
    if (buffer && buffer->m_compressed == nullptr && IsSupported(*buffer) && (!isCompressionDiscarded || !isCompressionDiscarded()))
       buffer->m_compressed = LoadOrCompress(*buffer, buffer->m_resizedOnLowMem ? std::filesystem::path() : cacheFile, isCompressionDiscarded);
 #ifdef __EMSCRIPTEN__
