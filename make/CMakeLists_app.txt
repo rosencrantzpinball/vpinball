@@ -1002,14 +1002,22 @@ elseif(PLATFORM STREQUAL "wasm")
 
    # wasm64 waits for the browser (the player's loops, bgfx's waits on WebGPU) with JSPI. For browsers without JSPI or
    # 64-bit memory (Safari), wasm32 waits with Asyncify instead, and the wasm64 page sends them to it (shell.html).
-   # Safari's threads don't see memory grown by another thread, so wasm32 starts with a heap that rarely needs to grow.
+   # Safari's threads don't see memory grown by another thread, so wasm32 starts with a heap that rarely needs to grow:
+   # the page makes it as large as the browser allows, up to 3 GB (shell.html), as iOS refuses that much, and the module
+   # takes one from 1 GB.
    # Safari's optimizing wasm compiler also runs out of memory on Asyncify-instrumented code (WebKit bug 304810), so
    # wasm32 instruments only the functions on a path to one of VPX's own suspends (main.cpp turns SDL's off), listed in
    # wasm32-asyncify-only.txt. Rerun make/wasm32-asyncify-only.sh when those paths change.
    if(ARCH STREQUAL "wasm32")
       set(VPX_WEB_BUILD "ASYNCIFY")
       set(_vpx_web_options -sASYNCIFY "-sASYNCIFY_ONLY=@${CMAKE_SOURCE_DIR}/make/wasm32-asyncify-only.txt"
-         -sASYNCIFY_STACK_SIZE=262144 -sINITIAL_MEMORY=3GB -sMAXIMUM_MEMORY=4GB)
+         -sASYNCIFY_STACK_SIZE=262144 -sINITIAL_MEMORY=1GB -sMAXIMUM_MEMORY=4GB)
+      # Emscripten's default INCOMING_MODULE_JS_API, plus the heap the page makes (wasmMemory)
+      set(_vpx_module_api ENVIRONMENT arguments canvas dynamicLibraries elementPointerLock instantiateWasm locateFile monitorRunDependencies
+         noExitRuntime noInitialRun onAbort onExit onRuntimeInitialized postRun preInit preRun print printErr setStatus statusMessage stderr
+         stdin stdout thisProgram wasm websocket wasmMemory)
+      list(JOIN _vpx_module_api "," _vpx_module_api)
+      list(APPEND _vpx_web_options "-sINCOMING_MODULE_JS_API=[${_vpx_module_api}]")
    else()
       set(VPX_WEB_BUILD "JSPI")
       set(_vpx_web_options -sJSPI -sINITIAL_MEMORY=512MB -sMAXIMUM_MEMORY=16GB)

@@ -171,6 +171,16 @@ var Module = {
       document.getElementById('version').textContent = Module.UTF8ToString(Number(Module._VPinballGetVersionStringFull()));
    },
 };
+// The wasm32 build's heap: Safari's threads don't see memory grown by another thread, so it starts as large as the browser
+// allows, up to 3 GB, which iOS refuses (the module takes one from 1 GB, which it makes itself when nothing larger works)
+if (WEB_BUILD === 'ASYNCIFY')
+   for (const pages of [49152, 40960, 32768, 24576]) { // 3, 2.5, 2 and 1.5 GB
+      try {
+         Module.wasmMemory = new WebAssembly.Memory({ initial: pages, maximum: 65536, shared: true });
+         break;
+      } catch (e) { // more than this browser gives a page: try less
+      }
+   }
 if (args.length === 0)
    picker.classList.add('shown');
 
