@@ -1023,7 +1023,7 @@ elseif(PLATFORM STREQUAL "wasm")
       -sALLOW_MEMORY_GROWTH=1
       -sSTACK_SIZE=8MB
       -sDEFAULT_PTHREAD_STACK_SIZE=2MB
-      -sPTHREAD_POOL_SIZE=32
+      -sPTHREAD_POOL_SIZE=16
       -lidbfs.js
       -sEXPORTED_RUNTIME_METHODS=FS,IDBFS,callMain,UTF8ToString
       -Wl,--allow-multiple-definition

@@ -132,7 +132,14 @@ static VPXAtlModule s_atlModule;
 
 
 VPApp::VPApp()
+#ifdef __EMSCRIPTEN__
+   // On the web each thread is a web worker the page keeps for good (about 25 MB each in Safari), and a worker beyond the
+   // ones started up front (make/CMakeLists_app.txt, PTHREAD_POOL_SIZE) can only start while the main thread is back in the
+   // browser, so a main thread waiting on it stalls: the thread pools sized from this stay small
+   : m_logicalNumberOfProcessors(min(SDL_GetNumLogicalCPUCores(), 4))
+#else
    : m_logicalNumberOfProcessors(SDL_GetNumLogicalCPUCores())
+#endif
 {
    g_app = this;
 
