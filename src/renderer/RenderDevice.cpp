@@ -501,6 +501,12 @@ void RenderDevice::RenderThread(RenderDevice* rd, bgfx::Init init)
 
    // We first run in headless mode to initialize the underlying backend and try to gather information to select a supported backbuffer format
    // This is needed to select a safe backbuffer format but will fail under OpenGL or Linux. For these, we start using BGRA8 which seems to be supported everywhere and adjust afterward
+#ifdef __EMSCRIPTEN__
+   // The page's canvas only gets the tonemapped image and the UI, drawn without depth (the scene has render targets of its
+   // own, and the back buffer has no depth for the renderer, see RenderTarget::HasDepth): no full-size depth/stencil
+   // buffer for it, which bgfx's swapchain has by default
+   init.swapChain.formatDepthStencil = bgfx::TextureFormat::Count;
+#endif
    init.swapChain.formatColor = bgfx::TextureFormat::BGRA8;
    if (init.swapChain.nwh && init.type != bgfx::RendererType::OpenGL && init.type != bgfx::RendererType::OpenGLES && init.type != bgfx::RendererType::Direct3D12)
    {
