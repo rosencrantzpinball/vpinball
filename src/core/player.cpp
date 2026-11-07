@@ -745,6 +745,7 @@ void Player::InitTableSession(const bool isInitial)
       std::mutex mutex;
       int nLoadPerformed = 0;
       int nLoadInProgress = 0;
+      size_t oversizedBytesInProgress = 0; // Decoded sizes of the images larger than the texture cap being loaded
       vector<Texture *> failedPreloads;
       const unsigned int maxTexDim = static_cast<unsigned int>(m_ptable->GetSettings().GetPlayer_MaxTexDimension());
       m_texLoadStats.Reset();
@@ -792,8 +793,13 @@ void Player::InitTableSession(const bool isInitial)
 #else
                           &deferredUploads,
 #endif
-                          &mutex, &nLoadInProgress, &nLoadPerformed, preloadCache, this, &failedPreloads](Texture *image, bool resizeOnLowMem)
+                          &mutex, &nLoadInProgress, &nLoadPerformed, &oversizedBytesInProgress, preloadCache, this, &failedPreloads](Texture *image, bool resizeOnLowMem)
       {
+         // An image larger than the texture cap is decoded at full size before being downsized, so several at once can
+         // need far more memory than the textures they make: such images load alongside each other only while their
+         // full sizes stay within a budget
+         const size_t oversizedBytes = maxTexDim > 0 && (image->m_width > maxTexDim || image->m_height > maxTexDim)
+            ? static_cast<size_t>(image->m_width) * image->m_height * (image->IsHDR() ? 8 : 4) : 0;
          bool readyToLoad = false;
          while (!readyToLoad)
          {
@@ -801,6 +807,8 @@ void Player::InitTableSession(const bool isInitial)
                const std::lock_guard<std::mutex> lock(mutex);
                if (nLoadInProgress == 0)
                   readyToLoad = true;
+               else if (oversizedBytes > 0 && oversizedBytesInProgress + oversizedBytes > 128ull * 1024 * 1024)
+                  readyToLoad = false;
                else
                {
                   size_t neededMem= image->GetEstimatedGPUSize() * 3; // 3x the estimated size is one for the image loader, one for the BaseTexture instance and one for the rendering API copy
@@ -818,7 +826,10 @@ void Player::InitTableSession(const bool isInitial)
 #endif
                }
                if (readyToLoad)
+               {
                   nLoadInProgress++;
+                  oversizedBytesInProgress += oversizedBytes;
+               }
             }
             if (!readyToLoad)
                std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -907,6 +918,7 @@ void Player::InitTableSession(const bool isInitial)
          {
             const std::lock_guard<std::mutex> lock(mutex);
             nLoadInProgress--;
+            oversizedBytesInProgress -= oversizedBytes;
          }
       };
 
