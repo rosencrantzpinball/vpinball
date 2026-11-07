@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.25)
 # Single build file for every target, selected by three cache variables (default to host BGFX):
 #   RENDERER  BGFX (default), GL, DX9
 #   PLATFORM  macos, linux, windows, windows-mingw, ios, ios-simulator, android, wasm
-#   ARCH      x64, x86, arm64, aarch64, arm64-v8a, wasm64
+#   ARCH      x64, x86, arm64, aarch64, arm64-v8a, wasm64, wasm32
 
 if(CMAKE_HOST_APPLE)
    set(_vpx_host_platform "macos")
@@ -176,6 +176,10 @@ elseif(PLATFORM STREQUAL "linux")
    set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
 elseif(PLATFORM STREQUAL "ios" OR PLATFORM STREQUAL "ios-simulator" OR PLATFORM STREQUAL "android")
    add_compile_options(-fPIC)
+elseif(PLATFORM STREQUAL "wasm" AND ARCH STREQUAL "wasm32")
+   # Asyncify (make/CMakeLists_app.txt) can't be combined with Wasm exceptions: in this build a throw aborts
+   add_compile_options(-pthread)
+   add_link_options(-pthread)
 elseif(PLATFORM STREQUAL "wasm")
    add_compile_options(-pthread -fwasm-exceptions -m64)
    add_link_options(-pthread -fwasm-exceptions -m64)
