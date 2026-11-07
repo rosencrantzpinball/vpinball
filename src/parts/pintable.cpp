@@ -1543,6 +1543,22 @@ HRESULT PinTable::LoadGameFromFilename(const std::filesystem::path &filename, VP
 
    PLOGI << "Table loaded"; // For profiling
 
+#ifdef __EMSCRIPTEN__
+   // The web page copies the table into its in-memory file system (/tables/, shell.html) for this one load, and nothing
+   // reads it again. Empty it (the file stays, as the player checks the table is on disk) and give its memory back at once:
+   // transferring the file's buffer detaches it, where dropping it would leave it to the main thread's garbage collection,
+   // which the shared wasm memory makes rare. Only a buffer the file has to itself is transferred.
+   if (m_filename.native().starts_with("/tables/"))
+      MAIN_THREAD_EM_ASM({
+         const node = FS.lookupPath(UTF8ToString($0)).node;
+         const contents = node.contents;
+         node.contents = null;
+         node.usedBytes = 0;
+         if (contents && contents.buffer.transfer && contents.byteOffset === 0 && contents.byteLength === contents.buffer.byteLength)
+            contents.buffer.transfer(0);
+      }, m_filename.c_str());
+#endif
+
    return hr;
 }
 
