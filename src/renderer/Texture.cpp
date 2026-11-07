@@ -13,6 +13,9 @@
 #define _WINDOWS_
 #endif
 #include "FreeImage.h"
+#ifdef __EMSCRIPTEN__
+#include <webp/decode.h>
+#endif
 
 #define STB_IMAGE_IMPLEMENTATION
 #define STBI_ONLY_JPEG // only use the SSE2-JPG path from stbi, as all others are not faster than FreeImage //!! can remove stbi again if at some point FreeImage incorporates libjpeg-turbo or something similar
@@ -115,12 +118,60 @@ std::shared_ptr<BaseTexture> BaseTexture::CreateFromFile(const std::filesystem::
    return CreateFromData(ppb.m_buffer.data(), ppb.m_buffer.size(), true, maxTexDimension, resizeOnLowMem);
 }
 
+#ifdef __EMSCRIPTEN__
+// A WebP image larger than maxTexDim, decoded straight to the size CreateFromFreeImage would downsize it to (libwebp
+// scales it while decoding), or nullptr for anything else
+static std::shared_ptr<BaseTexture> CreateFromWebPDownsized(const void* data, const size_t size, const bool isImageData, const unsigned int maxTexDim)
+{
+   const uint8_t* const bytes = static_cast<const uint8_t*>(data);
+   WebPBitstreamFeatures features;
+   if (size < 12 || memcmp(bytes, "RIFF", 4) != 0 || memcmp(bytes + 8, "WEBP", 4) != 0 || WebPGetFeatures(bytes, size, &features) != VP8_STATUS_OK || features.has_animation)
+      return nullptr;
+   const unsigned int width = features.width, height = features.height;
+   if (width <= maxTexDim && height <= maxTexDim)
+      return nullptr;
+   unsigned int newWidth = max(min(width, maxTexDim), MIN_TEXTURE_SIZE), newHeight = max(min(height, maxTexDim), MIN_TEXTURE_SIZE);
+   if (width - newWidth > height - newHeight)
+      newHeight = min(height * newWidth / width, maxTexDim);
+   else
+      newWidth = min(width * newHeight / height, maxTexDim);
+   const bool alpha = features.has_alpha;
+   const BaseTexture::Format format = isImageData ? (alpha ? BaseTexture::SRGBA : BaseTexture::SRGB) : (alpha ? BaseTexture::RGBA : BaseTexture::RGB);
+   std::shared_ptr<BaseTexture> tex = BaseTexture::Create(newWidth, newHeight, format);
+   WebPDecoderConfig config;
+   if (tex == nullptr || !WebPInitDecoderConfig(&config))
+      return nullptr;
+   config.options.use_scaling = 1;
+   config.options.scaled_width = static_cast<int>(newWidth);
+   config.options.scaled_height = static_cast<int>(newHeight);
+   config.output.colorspace = alpha ? MODE_RGBA : MODE_RGB;
+   config.output.is_external_memory = 1;
+   config.output.u.RGBA.rgba = static_cast<uint8_t*>(tex->data());
+   config.output.u.RGBA.stride = static_cast<int>(tex->pitch());
+   config.output.u.RGBA.size = static_cast<size_t>(tex->pitch()) * newHeight;
+   if (WebPDecode(bytes, size, &config) != VP8_STATUS_OK)
+      return nullptr;
+   tex->m_realWidth = width;
+   tex->m_realHeight = height;
+   return tex;
+}
+#endif
+
 std::shared_ptr<BaseTexture> BaseTexture::CreateFromData(const void* data, const size_t size, const bool isImageData, unsigned int maxTexDimension, bool resizeOnLowMem) noexcept
 {
    std::shared_ptr<BaseTexture> tex;
 
    if (data == nullptr || size == 0)
       return nullptr;
+
+#ifdef __EMSCRIPTEN__
+   // Decoding a WebP image larger than the texture cap at full size before downsizing it (below) needs a buffer as large as
+   // the full image, 128 MB for 8192x4096 texels, and the wasm heap keeps its peak: decode such an image straight to its
+   // capped size instead
+   if (maxTexDimension > 0 && !resizeOnLowMem)
+      if (tex = CreateFromWebPDownsized(data, size, isImageData, maxTexDimension); tex != nullptr)
+         return tex;
+#endif
 
    // Try to load using fast JPG path via stbi if no texture resize must be triggered
    if (maxTexDimension == 0 && !resizeOnLowMem)
