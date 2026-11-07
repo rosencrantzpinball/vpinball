@@ -156,6 +156,7 @@ var Module = {
    },
    onRuntimeInitialized: async () => {
       await loadPrefs();
+      writeTouchDeviceSettings();
       if (args.length > 0) {
          startPlayer(args);
          return;
@@ -287,6 +288,18 @@ async function loadPrefs() {
 function settingsPath() {
    const version = Module.UTF8ToString(Number(Module._VPinballGetVersionStringFull())).match(/(\d+)\.(\d+)/);
    return `${PREFS_DIR}/VPinballX/${version[1]}.${version[2]}/VPinballX.ini`;
+}
+
+// Phones and tablets give a page much less memory than computers (Safari on an iPhone may end a page using more than
+// about 1.5 GB), so a first visit from one starts with settings that need less than VPX's defaults: textures of at most
+// 2048 texels, rendering at half resolution (at least 1x on such screens), static reflections only and no ambient
+// occlusion. They can be changed in the settings like the others.
+function writeTouchDeviceSettings() {
+   const path = settingsPath();
+   if (!matchMedia('(pointer: coarse)').matches || Module.FS.analyzePath(path).exists)
+      return;
+   Module.FS.mkdirTree(path.substring(0, path.lastIndexOf('/')));
+   Module.FS.writeFile(path, '[Player]\nMaxTexDimension = 2048\nAAFactor = 0.5\nPFReflection = 2\nDisableAO = 1\n');
 }
 
 function loadEditorFiles() {
