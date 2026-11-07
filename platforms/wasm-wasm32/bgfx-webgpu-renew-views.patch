@@ -1,0 +1,58 @@
+--- a/src/renderer_webgpu.cpp
++++ b/src/renderer_webgpu.cpp
+@@ -7661,6 +7661,55 @@
+ 			wgpuRelease(swapChain.m_textureView);
+ 			wgpuRelease(swapChain.m_texture);
+ 		}
++
++		// WebKit's WebGPU keeps, for each texture view, the id of every command encoder the view was used in (of every use, in
++		// releases before 303984@main, which keep one for every use of a buffer too), and drops them only with the object
++		// (TextureView::setCommandEncoder, WebKit bug 329399, fixed in 325766@main; query sets the same). bgfx keeps its
++		// cached views, the bind groups that use them, its frame buffers' attachment views, its uniform buffers and the
++		// occlusion query set every render pass names for the whole session, so their lists grow for as long as it lasts, in
++		// the GPU process. Every 600 frames, release the cached bind groups and texture views (they are made again as draws
++		// need them), make the frame buffers' views again, as a reset does, and give the uniform scratch buffer new buffers and
++		// the occlusion queries a new query set while none is in flight: the old objects go with their lists once the GPU is
++		// done with them.
++		{
++			static uint32_t s_framesSinceRenewal = 0;
++			if (++s_framesSinceRenewal >= 600)
++			{
++				s_framesSinceRenewal = 0;
++				invalidateBindGroupCache();
++				m_textureViewStateCache.invalidate();
++				m_frameBuffers.each([](FrameBufferWGPU& _frameBuffer) { _frameBuffer.preReset(); _frameBuffer.postReset(); });
++
++				for (ChunkWGPU& chunk : m_uniformScratchBuffer.m_chunks)
++				{
++					WGPUBufferDescriptor bufferDesc =
++					{
++						.nextInChain      = NULL,
++						.label            = toWGPUStringView("uniform buffer"),
++						.usage            = m_uniformScratchBuffer.m_usage | WGPUBufferUsage_CopyDst,
++						.size             = m_uniformScratchBuffer.m_chunkSize,
++						.mappedAtCreation = false,
++					};
++
++					wgpuRelease(chunk.buffer);
++					chunk.buffer = WGPU_CHECK(wgpuDeviceCreateBuffer(m_device, &bufferDesc) );
++				}
++
++				if (0 == m_occlusionQuery.m_control.getNumUsed() )
++				{
++					WGPUQuerySetDescriptor querySetDesc =
++					{
++						.nextInChain = NULL,
++						.label       = toWGPUStringView("OcclusionQuery"),
++						.type        = WGPUQueryType_Occlusion,
++						.count       = BX_COUNTOF(m_occlusionQuery.m_handle),
++					};
++
++					wgpuRelease(m_occlusionQuery.m_querySet);
++					m_occlusionQuery.m_querySet = WGPU_CHECK(wgpuDeviceCreateQuerySet(m_device, &querySetDesc) );
++				}
++			}
++		}
+ #endif // BX_PLATFORM_EMSCRIPTEN
+ 
+ 		if (updateResolution(_render->m_mainSwapChain, _render->m_reset) )
