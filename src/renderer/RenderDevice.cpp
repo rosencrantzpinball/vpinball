@@ -398,6 +398,22 @@ private:
 };
 #endif
 
+#if defined(__EMSCRIPTEN__) && !defined(__wasm64__)
+// Each frame leaves a few WebGPU objects to this worker's garbage collector, objects whose native memory is far larger
+// than their JavaScript side. JavaScriptCore (Safari) counts the page's 3 GB shared memory in the heap's size and waits
+// for gigabytes of allocation before collecting it, so this garbage grew about 1.7 MB/s without ever being collected.
+// Making and dropping a few untouched wasm memories makes JavaScriptCore collect, without using real memory.
+static void CollectFrameGarbage()
+{
+   static double nextCollection = 0.;
+   const double now = emscripten_get_now();
+   if (now < nextCollection)
+      return;
+   nextCollection = now + 10000.;
+   EM_ASM({ for (let i = 0; i < 4; i++) new WebAssembly.Memory({ initial: 1024 }); });
+}
+#endif
+
 void RenderDevice::RenderThread(RenderDevice* rd, bgfx::Init init)
 {
    SetThreadName("RenderThread"s);
@@ -779,6 +795,9 @@ void RenderDevice::BGFXDesktopRenderLoop(const bgfx::Init& init)
 #ifdef __EMSCRIPTEN__
       // Return to the worker event loop to let WebGPU resolve its pending operations and present the canvas
       emscripten_sleep(0);
+#ifndef __wasm64__
+      CollectFrameGarbage();
+#endif
 #endif
       g_pplayer->m_renderProfiler->NewFrame(g_pplayer->m_time_msec);
 
