@@ -363,6 +363,8 @@ async function saveTableFolder() {
 }
 
 async function startPlayer(mainArgs) {
+   // The player only keeps a texture cache beside the table when the table's folder is saved after play (player.cpp)
+   Module.tableFolderSaved = tableFolder !== null;
    const timer = setInterval(() => syncPrefs(false), 10000);
    const ended = new Promise((resolve) => (Module.onMainReturned = resolve));
    const ret = Module.callMain(mainArgs);

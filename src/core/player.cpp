@@ -746,6 +746,14 @@ void Player::InitTableSession(const bool isInitial)
 
 #ifdef ENABLE_BGFX
       std::unique_ptr<TextureCompressor> texCompressor;
+#ifdef __EMSCRIPTEN__
+      // The web page's file system is in memory and starts empty at each visit, so a texture cache beside the table is
+      // only read back if the page saves the table's folder after play (shell.html, Module.tableFolderSaved). Otherwise
+      // compress without one, as writing it would only slow loading
+      if (m_renderer->m_renderDevice->m_compressTextures && !MAIN_THREAD_EM_ASM_INT({ return Module['tableFolderSaved'] ? 1 : 0; }))
+         texCompressor = std::make_unique<TextureCompressor>(std::filesystem::path(), maxTexDim);
+      else
+#endif
       if (m_renderer->m_renderDevice->m_compressTextures && FileExists(m_ptable->m_filename))
       {
          // Texture compression relies on its disk cache, so it is disabled entirely when the cache folder is not writable
