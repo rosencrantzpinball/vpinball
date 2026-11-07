@@ -31,6 +31,14 @@ static constexpr float kSpatialPlayfieldGain = 0.5f;
 namespace VPX
 {
 
+#ifdef __EMSCRIPTEN__
+progschj::ThreadPool& SoundPlayer::SharedCommandQueue()
+{
+   static progschj::ThreadPool* const queue = new progschj::ThreadPool(1); // Never deleted, so players destroyed at exit still find it
+   return *queue;
+}
+#endif
+
 SoundPlayer* SoundPlayer::Create(const AudioPlayer* audioPlayer, Sound* sound)
 {
    // Decode and resample the sound on the ancillary thread as this is fairly heavy
@@ -46,7 +54,9 @@ SoundPlayer* SoundPlayer::Create(const AudioPlayer* audioPlayer, const std::file
 SoundPlayer::SoundPlayer(const AudioPlayer* audioPlayer, const std::filesystem::path& filename)
    : m_audioPlayer(audioPlayer)
    , m_outputTarget(SoundOutTypes::SNDOUT_BACKGLASS)
+#ifndef __EMSCRIPTEN__
    , m_commandQueue(1)
+#endif
    , m_callbackId(""s) // Music: no callback information as there is at most one music playing
 {
    m_commandQueue.enqueue(
@@ -141,7 +151,9 @@ SoundPlayer::SoundPlayer(const AudioPlayer* audioPlayer, const std::filesystem::
 SoundPlayer::SoundPlayer(const AudioPlayer* audioPlayer, Sound* sound)
    : m_audioPlayer(audioPlayer)
    , m_outputTarget(sound->GetOutputTarget())
+#ifndef __EMSCRIPTEN__
    , m_commandQueue(1)
+#endif
    , m_callbackId(sound->GetName())
 {
    m_commandQueue.enqueue(
@@ -240,8 +252,13 @@ SoundPlayer::~SoundPlayer()
    m_alive->store(false);
    if (m_sound)
       m_sound->endCallback = nullptr;
+#ifdef __EMSCRIPTEN__
+   // The queue is shared: wait for the commands this player sent, which its one thread runs in order
+   m_commandQueue.enqueue_block([] {}).wait();
+#else
    m_commandQueue.wait_until_empty();
    m_commandQueue.wait_until_nothing_in_flight();
+#endif
    if (m_sound)
    {
       ma_sound_stop(m_sound.get());

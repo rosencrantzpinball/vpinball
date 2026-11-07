@@ -76,7 +76,14 @@ private:
    // Shared with the loop-restart task enqueued by OnSoundEnd on the audio thread, so a task
    // dispatched around destruction never calls ma_sound_start on an uninitialized/freed sound
    const std::shared_ptr<std::atomic<bool>> m_alive = std::make_shared<std::atomic<bool>>(true);
+#ifdef __EMSCRIPTEN__
+   // On the web each thread is a Web Worker (about 24 MB each in Safari), and a table keeps a player for each of its sounds
+   // played (and for each copy playing at once) until it ends: all players dispatch to one thread, which runs them in order
+   static progschj::ThreadPool& SharedCommandQueue();
+   progschj::ThreadPool& m_commandQueue = SharedCommandQueue();
+#else
    mutable progschj::ThreadPool m_commandQueue; // Worker thread on which all commands are dispatched
+#endif
 
    const string m_callbackId;
    static void OnSoundEnd(void* pUserData, ma_sound* pSound);

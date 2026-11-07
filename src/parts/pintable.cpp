@@ -6,6 +6,9 @@
 #ifdef VPX_HAS_CRYPTOAPI
 #include <wincrypt.h> // legacy VP8/VP9 script decryption
 #endif
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
 
 #include "audio/AudioPlayer.h"
 #include "core/editablereg.h"
@@ -1788,7 +1791,11 @@ HRESULT PinTable::LoadGameFromVPXStorage(VPXFileFeedback &feedback)
             pool.enqueue_block(task.task);
          while (pool.has_work_in_flight())
          {
+#if defined(__EMSCRIPTEN__) && !defined(__wasm64__)
+            emscripten_sleep(10); // Return to the browser, which SDL_Delay doesn't do with Asyncify (main.cpp)
+#else
             SDL_Delay(10);
+#endif
             feedback.SetProgress(nLoadedItems);
          };
 
@@ -2826,7 +2833,11 @@ HRESULT PinTable::LoadGameFromJSONPack(JSONSerializer::Deserializer &packRef, VP
       // Wait, updating the progress bar on the UI thread
       while (pool.has_work_in_flight())
       {
+#if defined(__EMSCRIPTEN__) && !defined(__wasm64__)
+         emscripten_sleep(10); // Return to the browser, which SDL_Delay doesn't do with Asyncify (main.cpp)
+#else
          SDL_Delay(10);
+#endif
          feedback.SetProgress(nLoadedItems);
       }
    }

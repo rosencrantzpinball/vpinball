@@ -1000,13 +1000,27 @@ elseif(PLATFORM STREQUAL "wasm")
       WMPPlugin
    )
 
+   # wasm64 waits for the browser (the player's loops, bgfx's waits on WebGPU) with JSPI. For browsers without JSPI or
+   # 64-bit memory (Safari), wasm32 waits with Asyncify instead, and the wasm64 page sends them to it (shell.html).
+   # Safari's threads don't see memory grown by another thread, so wasm32 starts with a heap that rarely needs to grow.
+   # Safari's optimizing wasm compiler also runs out of memory on Asyncify-instrumented code (WebKit bug 304810), so
+   # wasm32 instruments only the functions on a path to one of VPX's own suspends (main.cpp turns SDL's off), listed in
+   # wasm32-asyncify-only.txt. Rerun make/wasm32-asyncify-only.sh when those paths change.
+   if(ARCH STREQUAL "wasm32")
+      set(VPX_WEB_BUILD "ASYNCIFY")
+      set(_vpx_web_options -sASYNCIFY "-sASYNCIFY_ONLY=@${CMAKE_SOURCE_DIR}/make/wasm32-asyncify-only.txt"
+         -sASYNCIFY_STACK_SIZE=262144 -sINITIAL_MEMORY=3GB -sMAXIMUM_MEMORY=4GB)
+   else()
+      set(VPX_WEB_BUILD "JSPI")
+      set(_vpx_web_options -sJSPI -sINITIAL_MEMORY=512MB -sMAXIMUM_MEMORY=16GB)
+   endif()
+   configure_file("${CMAKE_SOURCE_DIR}/apps/web/shell.html" "${CMAKE_BINARY_DIR}/shell.html" @ONLY)
+
    target_link_options(vpinball PUBLIC
       --use-port=emdawnwebgpu
-      -sJSPI
+      ${_vpx_web_options}
       -sOFFSCREENCANVAS_SUPPORT
       -sALLOW_MEMORY_GROWTH=1
-      -sMAXIMUM_MEMORY=16GB
-      -sINITIAL_MEMORY=512MB
       -sSTACK_SIZE=8MB
       -sDEFAULT_PTHREAD_STACK_SIZE=2MB
       -sPTHREAD_POOL_SIZE=32
@@ -1019,10 +1033,10 @@ elseif(PLATFORM STREQUAL "wasm")
       "--preload-file=${CMAKE_SOURCE_DIR}/plugins/flexdmd/assets@/plugins/flexdmd/assets"
       "--exclude-file=*.vpz"
       "--exclude-file=*/src/assets/web"
-      "--shell-file=${CMAKE_SOURCE_DIR}/apps/web/shell.html"
+      "--shell-file=${CMAKE_BINARY_DIR}/shell.html"
    )
 
-   set_property(TARGET vpinball APPEND PROPERTY LINK_DEPENDS "${CMAKE_SOURCE_DIR}/apps/web/shell.html")
+   set_property(TARGET vpinball APPEND PROPERTY LINK_DEPENDS "${CMAKE_BINARY_DIR}/shell.html")
 
    add_custom_command(TARGET vpinball POST_BUILD
       COMMAND "${CMAKE_COMMAND}" -E copy "${CMAKE_SOURCE_DIR}/apps/web/favicon.png" "${CMAKE_SOURCE_DIR}/apps/web/vpinball-logo.png" "${CMAKE_SOURCE_DIR}/apps/web/sw.js" "${CMAKE_SOURCE_DIR}/src/assets/web/monaco-editor.js" "$<TARGET_FILE_DIR:vpinball>"

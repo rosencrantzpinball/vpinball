@@ -159,6 +159,12 @@ std::shared_ptr<BaseTexture> BaseTexture::CreateFromData(const void* data, const
 
    if (tex == nullptr)
    {
+#if defined(__EMSCRIPTEN__) && !defined(__wasm64__)
+      // The wasm32 build has no C++ exceptions (Asyncify can't be combined with them), and LibRaw throws while it checks
+      // whether data is a camera RAW image, which aborts the page: tables use no RAW images, so FreeImage skips them
+      static const bool rawSkipped = FreeImage_SetPluginEnabled(FIF_RAW, FALSE) != -1;
+      (void)rawSkipped;
+#endif
       FIMEMORY * const dataHandle = FreeImage_OpenMemory((BYTE*)data, (DWORD)size);
       if (!dataHandle)
          return nullptr;

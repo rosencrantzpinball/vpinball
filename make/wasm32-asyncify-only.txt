@@ -1,0 +1,72 @@
+AuditTableCommand::Execute()
+CanvasRenderHost::Main(void*)
+CaptureAttractCommand::Execute()
+Emscripten_GLES_SwapWindow
+Emscripten_ShowMessagebox
+Emscripten_UpdateWindowFramebuffer
+ExportPOVCommand::Execute()
+InspectorPluginLoad
+LiveEditCommand::Execute()
+LiveUI::RenderUI()
+PinTable::LoadGameFromFilename(std::__2::filesystem::path const&, VPXFileFeedback&)
+PinTable::LoadGameFromJSONPack(JSONSerializer::Deserializer&, VPXFileFeedback&)
+PlayTableCommand::Execute()
+Player::ApplyTableTransition(PinTable*, bool, Player::StackedTable const*)
+Player::GameLoop()
+Player::InitTableSession(bool)
+Player::Player(PinTable*, Player::PlayMode, LoadProgress&)
+Player::PrepareFrame()
+Player::UpdateGameLogic()
+Player::~Player()
+PovEditCommand::Execute()
+Renderer::RenderUIScene()
+Renderer::~Renderer()
+RunPlayerSessions(PinTable*, Player::PlayMode, std::__2::function<void (Player*)> const&)
+TableBasedCommand::LoadTable()
+VPX::EditorUI::PartLibraryPanel::RenderLibraryFolder(VPX::EditorUI::PartLibraryPanel::LibraryFolder const&, std::__2::basic_string<char, std::__2::char_traits<char>, std::__2::allocator<char>> const&)
+VPX::EditorUI::PartLibraryPanel::StartPlacement()
+ValidateTournamentCommand::Execute()
+WGPUInstanceImpl::WaitAny(unsigned long, WGPUFutureWaitInfo*, unsigned long long)
+bgfx::wgpu::rendererCreate(bgfx::Init const&)
+ff_listen_bind
+ff_network_wait_fd
+ff_network_wait_fd_timeout
+ff_poll_interrupt
+ff_rtsp_fetch_packet
+mg_mgr_free
+mg_mgr_poll
+poll
+rtp_read
+rtp_write
+rtsp_read_packet
+rtsp_write_packet
+sap_fetch_packet
+std::__2::__function::__func<RenderDevice::RenderDevice(VPX::Window*, bool, bool, bool, bool, bool, int, VideoSyncMode&)::$_0, void ()>::operator()()
+tcp_accept
+tcp_open
+tcp_read
+tcp_write
+udp_read
+udp_write
+unix_open
+unix_read
+unix_write
+void* std::__2::__thread_proxy[abi:nqe220108]<std::__2::tuple<std::__2::unique_ptr<std::__2::__thread_struct, std::__2::default_delete<std::__2::__thread_struct>>, Inspector::WebServer::Start(int, std::__2::basic_string<char, std::__2::char_traits<char>, std::__2::allocator<char>> const&)::$_0>>(void*)
+void* std::__2::__thread_proxy[abi:nqe220108]<std::__2::tuple<std::__2::unique_ptr<std::__2::__thread_struct, std::__2::default_delete<std::__2::__thread_struct>>, VPX::EditorUI::EditorUI::StartFileOp(std::__2::unique_ptr<VPX::EditorUI::EditorUI::AsyncFileOp, std::__2::default_delete<VPX::EditorUI::EditorUI::AsyncFileOp>>)::$_1>>(void*)
+dynCall_*
+*__thread_proxy*
+RunThread
+SDL_RunThread*
+*__async_assoc_state*
+*__packaged_task_func*
+main
+WinMain
+wgpuInstanceWaitAny
+bgfx::init(*)
+bgfx::Context::init(*)
+bgfx::Context::frame(*)
+bgfx::Context::swap(*)
+bgfx::Context::renderFrame(*)
+bgfx::renderFrame(*)
+bgfx::Context::rendererExecCommands(*)
+bgfx::rendererCreate(*)
