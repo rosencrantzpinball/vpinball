@@ -1001,13 +1001,14 @@ elseif(PLATFORM STREQUAL "wasm")
    )
 
    # wasm64 waits for the browser (the player's loops, bgfx's waits on WebGPU) with JSPI. For browsers without JSPI or
-   # 64-bit memory (Safari), wasm32 waits with Asyncify instead, and the wasm64 page sends them to it (shell.html)
+   # 64-bit memory (Safari), wasm32 waits with Asyncify instead, and the wasm64 page sends them to it (shell.html).
+   # Safari's threads don't see memory grown by another thread, so wasm32 starts with a heap that rarely needs to grow.
    if(ARCH STREQUAL "wasm32")
       set(VPX_WEB_BUILD "ASYNCIFY")
-      set(_vpx_web_options -sASYNCIFY -sASYNCIFY_STACK_SIZE=262144 -sMAXIMUM_MEMORY=4GB)
+      set(_vpx_web_options -sASYNCIFY -sASYNCIFY_STACK_SIZE=262144 -sINITIAL_MEMORY=3GB -sMAXIMUM_MEMORY=4GB)
    else()
       set(VPX_WEB_BUILD "JSPI")
-      set(_vpx_web_options -sJSPI -sMAXIMUM_MEMORY=16GB)
+      set(_vpx_web_options -sJSPI -sINITIAL_MEMORY=512MB -sMAXIMUM_MEMORY=16GB)
    endif()
    configure_file("${CMAKE_SOURCE_DIR}/apps/web/shell.html" "${CMAKE_BINARY_DIR}/shell.html" @ONLY)
 
@@ -1016,7 +1017,6 @@ elseif(PLATFORM STREQUAL "wasm")
       ${_vpx_web_options}
       -sOFFSCREENCANVAS_SUPPORT
       -sALLOW_MEMORY_GROWTH=1
-      -sINITIAL_MEMORY=512MB
       -sSTACK_SIZE=8MB
       -sDEFAULT_PTHREAD_STACK_SIZE=2MB
       -sPTHREAD_POOL_SIZE=32
