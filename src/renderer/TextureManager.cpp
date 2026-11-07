@@ -30,6 +30,16 @@ std::shared_ptr<Sampler> TextureManager::LoadTexture(ITexManCacheable* const mem
    entry.lastUsedFrame = m_statsFrame;
 #endif
 
+   if (entry.deferred)
+   {
+      if (!entry.deferredRequested && m_deferredLoad)
+      {
+         entry.deferredRequested = true;
+         m_deferredLoad(memtex);
+      }
+      return sampler; // The fallback texture, until the texture has loaded
+   }
+
    if (entry.pendingUpload)
    {
       // Consumed by whichever variant asks first, dropping the strong reference that was keeping the decoded
@@ -81,7 +91,7 @@ std::shared_ptr<Sampler> TextureManager::LoadTexture(ITexManCacheable* const mem
 void TextureManager::AddPendingUpload(ITexManCacheable* memtex, std::shared_ptr<const BaseTexture> bitmap)
 {
    const std::lock_guard lock(m_mapMutex);
-   const CIter it = m_map.find(memtex->GetLiveHash());
+   const Iter it = m_map.find(memtex->GetLiveHash());
    if (it == m_map.end())
    {
       MapEntry entry;
@@ -89,6 +99,37 @@ void TextureManager::AddPendingUpload(ITexManCacheable* memtex, std::shared_ptr<
       entry.tex = memtex;
       m_map[memtex->GetLiveHash()] = entry;
    }
+   else if (it->second.deferred)
+   {
+      // A deferred texture has loaded: its fallback samplers make way for the texture
+      MapEntry& entry = it->second;
+      entry.pendingUpload = bitmap ? std::move(bitmap) : memtex->GetRawBitmap(false, 0);
+      entry.samplers[VARIANT_SRGB].reset();
+      entry.samplers[VARIANT_LINEAR].reset();
+      entry.isPlaceHolder = false;
+      entry.deferred = false;
+   }
+}
+
+void TextureManager::AddDeferred(ITexManCacheable* memtex)
+{
+   const std::lock_guard lock(m_mapMutex);
+   if (m_map.find(memtex->GetLiveHash()) != m_map.end())
+      return;
+   MapEntry entry;
+   // Transparent black rather than the fallback texture's magenta checker, as this is no error: the texture is on its way
+   if (m_deferredPlaceholder == nullptr)
+   {
+      m_deferredPlaceholder = BaseTexture::Create(8, 8, BaseTexture::SRGBA);
+      if (m_deferredPlaceholder)
+         memset(m_deferredPlaceholder->data(), 0, 8 * 8 * 4);
+   }
+   entry.samplers[VARIANT_SRGB] = std::make_shared<Sampler>(&m_rd, memtex->GetName(), m_rd.OrFallback(m_deferredPlaceholder), false);
+   entry.samplers[VARIANT_LINEAR] = entry.samplers[VARIANT_SRGB];
+   entry.isPlaceHolder = true;
+   entry.deferred = true;
+   entry.tex = memtex;
+   m_map[memtex->GetLiveHash()] = entry;
 }
 
 void TextureManager::AddPlaceHolder(ITexManCacheable* memtex)

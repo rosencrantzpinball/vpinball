@@ -28,6 +28,10 @@ public:
 
    void AddPlaceHolder(ITexManCacheable* memtex);
    void AddPendingUpload(ITexManCacheable* memtex, std::shared_ptr<const BaseTexture> bitmap = nullptr);
+   // Registers a texture to load only once something draws it: m_deferredLoad is asked to then, and hands the texture over
+   // with AddPendingUpload; until then it draws as a transparent placeholder
+   void AddDeferred(ITexManCacheable* memtex);
+   std::function<void(ITexManCacheable*)> m_deferredLoad;
    std::shared_ptr<Sampler> LoadTexture(ITexManCacheable* const memtex, const bool force_linear_rgb);
    void SetDirty(ITexManCacheable* memtex);
    void UnloadTexture(ITexManCacheable* memtex);
@@ -57,6 +61,8 @@ private:
       bool dirty[VARIANT_COUNT] = { false, false };
       ITexManCacheable* tex = nullptr;
       bool isPlaceHolder = false;
+      bool deferred = false; // Registered with AddDeferred, not loaded yet
+      bool deferredRequested = false;
       std::shared_ptr<const class BaseTexture> pendingUpload;
       uint32_t lastUsedFrame = 0; // Frame index of the last use, for LRU eviction
       size_t gpuBytes[VARIANT_COUNT] = { 0, 0 }; // Estimated resident bytes of each variant
@@ -64,6 +70,7 @@ private:
       uint32_t upgradeRetryFrame = 0; // Frame index before which a degraded variant is not retried at full size
    };
    RenderDevice& m_rd;
+   std::shared_ptr<class BaseTexture> m_deferredPlaceholder; // What deferred textures draw as until they have loaded
    // Guards m_map, as loader threads register and upload textures while the main thread renders the loading UI.
    // Held for whole calls: code run under it (sampler creation, bitmap decode) must not call back into the manager.
    mutable std::mutex m_mapMutex;

@@ -20,6 +20,14 @@
 #include "parts/flasher.h"
 #include "parts/light.h"
 #include "parts/primitive.h"
+#ifdef __EMSCRIPTEN__
+#include "parts/flipper.h"
+#include "parts/hittarget.h"
+#include "parts/ramp.h"
+#include "parts/rubber.h"
+#include "parts/spinner.h"
+#include "parts/surface.h"
+#endif
 #include "parts/Sound.h"
 #include "physics/cabinet/NudgeHandler.h"
 #include "physics/hittimer.h"
@@ -487,6 +495,29 @@ void Player::UnlockRenderThread()
 #endif
 }
 
+#ifdef __EMSCRIPTEN__
+// Whether the table part of that name is shown as the table was loaded (parts without a visibility flag count as shown)
+static bool IsPartShownAtLoad(const PinTable* table, const string& name)
+{
+   for (IEditable* part : table->GetParts())
+      if (part != nullptr && part->GetName() == name)
+         switch (part->GetItemType())
+         {
+         case eItemPrimitive: return static_cast<Primitive*>(part)->m_d.m_visible;
+         case eItemRamp: return static_cast<Ramp*>(part)->m_d.m_visible;
+         case eItemFlipper: return static_cast<Flipper*>(part)->m_d.m_visible;
+         case eItemHitTarget: return static_cast<HitTarget*>(part)->m_d.m_visible;
+         case eItemRubber: return static_cast<Rubber*>(part)->m_d.m_visible;
+         case eItemSpinner: return static_cast<Spinner*>(part)->m_d.m_visible;
+         case eItemLight: return static_cast<Light*>(part)->m_d.m_visible;
+         case eItemFlasher: return static_cast<Flasher*>(part)->m_d.m_isVisible;
+         case eItemSurface: return static_cast<Surface*>(part)->m_d.m_topBottomVisible || static_cast<Surface*>(part)->m_d.m_sideVisible;
+         default: return true;
+         }
+   return true;
+}
+#endif
+
 void Player::InitTableSession(const bool isInitial)
 {
    constexpr float progressPhysicLength = 10.f;
@@ -927,8 +958,31 @@ void Player::InitTableSession(const bool isInitial)
       m_frameMutexHeld = false;
       m_renderer->m_renderDevice->m_frameMutex.unlock();
 #endif
+#ifdef __EMSCRIPTEN__
+      // Images that only parts hidden in the table use can be most of its textures, which the wasm heap would hold for
+      // good: they are loaded once one of them is drawn (the script showing its part), by a thread of their own
+      std::unordered_set<const Texture*> deferred;
+      for (Texture* image : m_ptable->m_vimage)
+      {
+         vector<WhereUsedInfo> where;
+         m_ptable->ShowWhereImageUsed(where, image);
+         bool shown = where.empty() || StrCompareNoCase(image->m_name, m_ptable->m_imageColorGrade);
+         for (const string& bg : m_ptable->m_BG_image)
+            shown |= StrCompareNoCase(image->m_name, bg);
+         for (const WhereUsedInfo& user : where)
+            shown = shown || IsPartShownAtLoad(m_ptable, user.whereUsedObjectname);
+         if (!shown)
+            deferred.insert(image);
+      }
+      PLOGI << deferred.size() << " images only parts hidden in the table use will load once drawn";
+#endif
       progschj::ThreadPool pool(g_app->GetLogicalNumberOfProcessors());
       for (auto image : m_ptable->m_vimage)
+#ifdef __EMSCRIPTEN__
+         if (deferred.contains(image))
+            m_renderer->m_renderDevice->m_texMan.AddDeferred(image);
+         else
+#endif
          pool.enqueue_block(loadImage, image, false);
 
       bool showLoadingUI = false;
@@ -992,6 +1046,33 @@ void Player::InitTableSession(const bool isInitial)
       // (before locking the render thread, like the parallel load, as uploading a preloaded texture acquires the frame mutex)
       for (auto image : failedPreloads)
          loadImage(image, true);
+
+#ifdef __EMSCRIPTEN__
+      if (!deferred.empty())
+      {
+         m_deferredTextures = std::make_unique<progschj::ThreadPool>(1);
+#ifdef ENABLE_BGFX
+         if (m_renderer->m_renderDevice->m_compressTextures)
+            m_deferredTextureCompressor = std::make_unique<TextureCompressor>(std::filesystem::path(), maxTexDim);
+#endif
+         m_renderer->m_renderDevice->m_texMan.m_deferredLoad = [this, maxTexDim](ITexManCacheable* tex)
+         {
+            m_deferredTextures->enqueue([this, maxTexDim, image = static_cast<Texture*>(tex)]()
+            {
+               const uint32_t start = msec();
+               std::shared_ptr<const BaseTexture> buffer;
+#ifdef ENABLE_BGFX
+               if (m_deferredTextureCompressor)
+                  buffer = m_deferredTextureCompressor->Load(image, false, nullptr);
+#endif
+               if (buffer == nullptr)
+                  buffer = image->GetRawBitmap(false, maxTexDim);
+               m_renderer->m_renderDevice->m_texMan.AddPendingUpload(image, buffer);
+               PLOGI << "Image '" << image->m_name << "' was loaded once drawn, in " << (msec() - start) << " ms";
+            });
+         };
+      }
+#endif
 
 #ifndef ENABLE_BGFX
       for (const auto& [image, linearRGB] : deferredUploads)
@@ -1469,6 +1550,13 @@ Player::~Player()
 
    m_closing = CS_CLOSED;
    PLOGI << "Closing player...";
+
+#ifdef __EMSCRIPTEN__
+   // The thread loading deferred textures ends (after a load in progress) before the texture manager goes
+   if (m_renderer)
+      m_renderer->m_renderDevice->m_texMan.m_deferredLoad = nullptr;
+   m_deferredTextures = nullptr;
+#endif
 
    // Release the UI first so that its teardown still sees a live script interpreter (option events,...)
    delete m_liveUI;

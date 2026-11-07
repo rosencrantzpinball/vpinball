@@ -65,6 +65,9 @@ enum ProfilingMode
 
 ////////////////////////////////////////////////////////////////////////////////
 
+namespace progschj { class ThreadPool; }
+class TextureCompressor;
+
 class Player final
 {
 public:
@@ -281,6 +284,10 @@ public:
    VPX::RenderOutput m_scoreViewOutput;
    VPX::RenderOutput m_topperOutput;
    std::unique_ptr<Renderer> m_renderer;
+#ifdef __EMSCRIPTEN__
+   std::unique_ptr<progschj::ThreadPool> m_deferredTextures; // Loads the textures the texture manager defers (InitTableSession)
+   std::unique_ptr<TextureCompressor> m_deferredTextureCompressor;
+#endif
    VRDevice *m_vrDevice = nullptr;
    vector<AncillaryRendererDef> m_ancillaryWndRenderers[VPXWindowId::VPXWINDOW_Topper + 1];
    int GetAncillaryRendererPriority(VPXWindowId window, const string& id) const;
