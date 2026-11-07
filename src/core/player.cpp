@@ -436,6 +436,14 @@ Player::Player(PinTable *const table, const PlayMode playMode, LoadProgress &loa
 
    PLOGI << "Startup done"; // For profiling
 
+#ifdef __EMSCRIPTEN__
+   // On the web each thread is a web worker with its own instance of the program (about 25 MB in Safari, mostly the
+   // instance's function table), and the page keeps the workers of ended threads for later ones. Loading's threads have
+   // ended: a second later, once the page has taken their workers back, end all of those but two (the page starts new
+   // workers if more threads are needed)
+   MAIN_THREAD_EM_ASM({ setTimeout(() => { for (const worker of PThread.unusedWorkers.splice(2)) worker.terminate(); }, 1000); });
+#endif
+
 #ifdef _MSC_VER
    LockForegroundWindow(true);
    // Broadcast a message to notify front-ends that it is time to reveal the playfield.
