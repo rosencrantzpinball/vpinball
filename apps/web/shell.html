@@ -465,7 +465,9 @@ async function importFiles(entries) {
    for (const { path, file } of entries) {
       const dest = '/tables/' + path;
       mkdirs(dest.substring(0, dest.lastIndexOf('/')));
-      Module.FS.writeFile(dest, new Uint8Array(await file.arrayBuffer()));
+      // The buffer is only the page's: the file system can keep it as the file's contents, instead of a copy (the original
+      // would wait for the main thread's garbage collection, which its shared memory makes rare)
+      Module.FS.writeFile(dest, new Uint8Array(await file.arrayBuffer()), { canOwn: true });
       done++;
       setStatus(`Copying files ${done}/${total}`);
    }
