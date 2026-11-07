@@ -818,11 +818,23 @@ void Player::InitTableSession(const bool isInitial)
 #ifndef ENABLE_BGFX
       vector<std::pair<Texture*, bool>> deferredUploads;
 #endif
+#ifdef __EMSCRIPTEN__
+      // The other images are uploaded as soon as they have loaded, so their compressed copies leave the heap during loading
+      // rather than at their first draw; linear for the normal maps and the color grade, which the renderer draws linear
+      // (a texture also drawn the other way decodes again then)
+      std::unordered_set<string> linearImages { m_ptable->m_imageColorGrade };
+      for (IEditable* part : m_ptable->GetParts())
+         if (part->GetItemType() == eItemPrimitive)
+            linearImages.insert(static_cast<Primitive*>(part)->m_d.m_szNormalMap);
+#endif
       auto loadImage = [progressPos = m_loadProgress->GetProgress() + progressPhysicLength, maxTexDim,
 #ifdef ENABLE_BGFX
                           texCompressor = texCompressor.get(),
 #else
                           &deferredUploads,
+#endif
+#ifdef __EMSCRIPTEN__
+                          &linearImages,
 #endif
                           &mutex, &nLoadInProgress, &nLoadPerformed, &oversizedBytesInProgress, preloadCache, this, &failedPreloads](Texture *image, bool resizeOnLowMem)
       {
@@ -901,6 +913,10 @@ void Player::InitTableSession(const bool isInitial)
                   // We could upload all images, but this would need support for dynamic change of 'force linear' and would lead to load all VR textures on lower end systems
                   // Instead we register it to the texture manager that will hold a strong reference and upload when needed
                   m_renderer->m_renderDevice->m_texMan.AddPendingUpload(image, buffer);
+#ifdef __EMSCRIPTEN__
+                  if (preloadCache == nullptr)
+                     m_renderer->m_renderDevice->UploadTexture(image, linearImages.contains(image->m_name));
+#endif
                   if (preloadCache)
                      for (auto node = preloadCache->FirstChildElement("texture"); node != nullptr; node = node->NextSiblingElement())
                      {
@@ -959,14 +975,15 @@ void Player::InitTableSession(const bool isInitial)
       m_renderer->m_renderDevice->m_frameMutex.unlock();
 #endif
 #ifdef __EMSCRIPTEN__
-      // Images that only parts hidden in the table use can be most of its textures, which the wasm heap would hold for
-      // good: they are loaded once one of them is drawn (the script showing its part), by a thread of their own
+      // Images that only parts hidden in the table use, or that no part uses (the script swapping them in, or nothing), can
+      // be most of a table's textures, which the wasm heap would hold for good: they are loaded once drawn (the script
+      // showing a part or swapping an image in), by a thread of their own
       std::unordered_set<const Texture*> deferred;
       for (Texture* image : m_ptable->m_vimage)
       {
          vector<WhereUsedInfo> where;
          m_ptable->ShowWhereImageUsed(where, image);
-         bool shown = where.empty() || StrCompareNoCase(image->m_name, m_ptable->m_imageColorGrade);
+         bool shown = StrCompareNoCase(image->m_name, m_ptable->m_imageColorGrade);
          for (const string& bg : m_ptable->m_BG_image)
             shown |= StrCompareNoCase(image->m_name, bg);
          for (const WhereUsedInfo& user : where)
@@ -974,7 +991,7 @@ void Player::InitTableSession(const bool isInitial)
          if (!shown)
             deferred.insert(image);
       }
-      PLOGI << deferred.size() << " images only parts hidden in the table use will load once drawn";
+      PLOGI << deferred.size() << " images that no shown part uses will load once drawn";
 #endif
       progschj::ThreadPool pool(g_app->GetLogicalNumberOfProcessors());
       for (auto image : m_ptable->m_vimage)
