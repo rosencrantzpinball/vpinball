@@ -1,0 +1,29 @@
+# Functions the wasm32 build must instrument besides the ones Asyncify finds through direct calls: frames on a suspend
+# path that reach the suspend through an indirect call. Patterns use * and need balanced parentheses. Lines starting
+# with # are comments. The link warns about entries that match nothing: Release builds inline WinMain, SDL_RunThread,
+# wgpuInstanceWaitAny and bgfx::Context::init (builds that don't still need them), and *__thread_proxy* claims the
+# std::thread proxies that the report also lists by name.
+#
+# JavaScript starts each pthread (CanvasRenderHost::Main) and calls back into wasm through these trampolines
+dynCall_*
+# Thread entries call the thread's function through a pointer: std::thread's proxy, SDL's thread start, and std::async's
+# and packaged_task's calls
+*__thread_proxy*
+RunThread
+SDL_RunThread*
+*__async_assoc_state*
+*__packaged_task_func*
+# main calls the command line's command through a virtual Execute()
+main
+WinMain
+# emdawnwebgpu's wait, which bgfx's WebGPU renderer calls while it starts (adapter, device)
+wgpuInstanceWaitAny
+# bgfx creates its renderer through a function pointer, under bgfx::init on the canvas thread
+bgfx::init(*)
+bgfx::Context::init(*)
+bgfx::Context::frame(*)
+bgfx::Context::swap(*)
+bgfx::Context::renderFrame(*)
+bgfx::renderFrame(*)
+bgfx::Context::rendererExecCommands(*)
+bgfx::rendererCreate(*)
