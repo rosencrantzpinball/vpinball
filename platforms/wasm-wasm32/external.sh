@@ -431,7 +431,10 @@ fi
 # build ffmpeg
 #
 
-FFMPEG_EXPECTED_SHA="${FFMPEG_SHA}"
+# Only the decoders, containers and parsers of common video and audio, which is what the PinUP (PUP) and FlexDMD plugins
+# play, without encoders or muxers: every instance of the program, one in each thread's web worker, holds the code, and
+# Safari spends about four times its size compiling it. The suffix rebuilds an ffmpeg configured otherwise
+FFMPEG_EXPECTED_SHA="${FFMPEG_SHA}-decoders"
 FFMPEG_FOUND_SHA="$([ -f ffmpeg/cache.txt ] && cat ffmpeg/cache.txt || echo "")"
 
 if [ "${FFMPEG_EXPECTED_SHA}" != "${FFMPEG_FOUND_SHA}" ]; then
@@ -463,6 +466,14 @@ if [ "${FFMPEG_EXPECTED_SHA}" != "${FFMPEG_FOUND_SHA}" ]; then
       --disable-doc \
       --disable-avdevice \
       --disable-avfilter \
+      --disable-everything \
+      --enable-decoder=h264,hevc,mpeg4,msmpeg4v1,msmpeg4v2,msmpeg4v3,mpeg1video,mpeg2video,vp8,vp9,mjpeg,theora,wmv1,wmv2,wmv3,vc1,gif,png \
+      --enable-decoder=aac,aac_latm,mp3,mp3float,mp2,mp2float,vorbis,opus,flac,alac,ac3,wmav1,wmav2 \
+      --enable-decoder=pcm_s16le,pcm_s16be,pcm_s24le,pcm_s32le,pcm_f32le,pcm_u8,pcm_mulaw,pcm_alaw,adpcm_ms,adpcm_ima_wav \
+      --enable-demuxer=mov,matroska,avi,asf,mp3,ogg,wav,flac,aac,mpegts,mpegps,m4v,h264,hevc,gif,image2 \
+      --enable-parser=h264,hevc,mpeg4video,mpegvideo,vp8,vp9,vc1,aac,mpegaudio,vorbis,opus,flac,ac3,png,gif,mjpeg \
+      --enable-bsf=h264_mp4toannexb,hevc_mp4toannexb,vp9_superframe_split,null \
+      --enable-protocol=file \
       --extra-cflags="${CFLAGS}" \
       --extra-ldflags="${LDFLAGS}"
    emmake make -j${NUM_PROCS}
