@@ -777,6 +777,14 @@ void Player::InitTableSession(const bool isInitial)
       int nLoadPerformed = 0;
       int nLoadInProgress = 0;
       size_t oversizedBytesInProgress = 0; // Decoded sizes of the images larger than the texture cap being loaded
+#ifdef __EMSCRIPTEN__
+      // A lossless WebP image is decoded at full size whatever the texture cap (libwebp holds the whole image, as its back
+      // references reach anywhere before), and a block that large lands at the top of the wasm heap, which never shrinks,
+      // unless a free region that large is left: such huge images load first, while the heap still has one, with only small
+      // images beside them (the others load smallest first, so that small ones keep the other threads busy meanwhile)
+      static constexpr size_t hugeImageBytes = 64ull * 1024 * 1024, smallImageBytes = 4ull * 1024 * 1024; // At full size
+      int nBigInProgress = 0, nHugeInProgress = 0; // Images above smallImageBytes, and of hugeImageBytes or more, loading
+#endif
       vector<Texture *> failedPreloads;
       const unsigned int maxTexDim = static_cast<unsigned int>(m_ptable->GetSettings().GetPlayer_MaxTexDimension());
       m_texLoadStats.Reset();
@@ -834,7 +842,7 @@ void Player::InitTableSession(const bool isInitial)
                           &deferredUploads,
 #endif
 #ifdef __EMSCRIPTEN__
-                          &linearImages,
+                          &linearImages, &nBigInProgress, &nHugeInProgress,
 #endif
                           &mutex, &nLoadInProgress, &nLoadPerformed, &oversizedBytesInProgress, preloadCache, this, &failedPreloads](Texture *image, bool resizeOnLowMem)
       {
@@ -843,6 +851,9 @@ void Player::InitTableSession(const bool isInitial)
          // full sizes stay within a budget
          const size_t oversizedBytes = maxTexDim > 0 && (image->m_width > maxTexDim || image->m_height > maxTexDim)
             ? static_cast<size_t>(image->m_width) * image->m_height * (image->IsHDR() ? 8 : 4) : 0;
+#ifdef __EMSCRIPTEN__
+         const size_t fullBytes = static_cast<size_t>(image->m_width) * image->m_height * (image->IsHDR() ? 8 : 4);
+#endif
          bool readyToLoad = false;
          while (!readyToLoad)
          {
@@ -850,6 +861,11 @@ void Player::InitTableSession(const bool isInitial)
                const std::lock_guard<std::mutex> lock(mutex);
                if (nLoadInProgress == 0)
                   readyToLoad = true;
+#ifdef __EMSCRIPTEN__
+               // A huge image starts only beside small ones, and only small ones start beside it
+               else if (fullBytes >= hugeImageBytes ? nBigInProgress > 0 : (nHugeInProgress > 0 && fullBytes > smallImageBytes))
+                  readyToLoad = false;
+#endif
                else if (oversizedBytes > 0 && oversizedBytesInProgress + oversizedBytes > 128ull * 1024 * 1024)
                   readyToLoad = false;
                else
@@ -872,6 +888,10 @@ void Player::InitTableSession(const bool isInitial)
                {
                   nLoadInProgress++;
                   oversizedBytesInProgress += oversizedBytes;
+#ifdef __EMSCRIPTEN__
+                  nBigInProgress += fullBytes > smallImageBytes;
+                  nHugeInProgress += fullBytes >= hugeImageBytes;
+#endif
                }
             }
             if (!readyToLoad)
@@ -966,6 +986,10 @@ void Player::InitTableSession(const bool isInitial)
             const std::lock_guard<std::mutex> lock(mutex);
             nLoadInProgress--;
             oversizedBytesInProgress -= oversizedBytes;
+#ifdef __EMSCRIPTEN__
+            nBigInProgress -= fullBytes > smallImageBytes;
+            nHugeInProgress -= fullBytes >= hugeImageBytes;
+#endif
          }
       };
 
@@ -994,7 +1018,20 @@ void Player::InitTableSession(const bool isInitial)
       PLOGI << deferred.size() << " images that no shown part uses will load once drawn";
 #endif
       progschj::ThreadPool pool(g_app->GetLogicalNumberOfProcessors());
+#ifdef __EMSCRIPTEN__
+      // Huge images first, largest first, then the others smallest first (see hugeImageBytes)
+      vector<Texture*> loadOrder = m_ptable->m_vimage;
+      std::ranges::stable_sort(loadOrder, [](const Texture* a, const Texture* b)
+         {
+            const size_t fa = static_cast<size_t>(a->m_width) * a->m_height * (a->IsHDR() ? 8 : 4), fb = static_cast<size_t>(b->m_width) * b->m_height * (b->IsHDR() ? 8 : 4);
+            if ((fa >= hugeImageBytes) != (fb >= hugeImageBytes))
+               return fa >= hugeImageBytes;
+            return fa >= hugeImageBytes ? fa > fb : fa < fb;
+         });
+      for (auto image : loadOrder)
+#else
       for (auto image : m_ptable->m_vimage)
+#endif
 #ifdef __EMSCRIPTEN__
          if (deferred.contains(image))
             m_renderer->m_renderDevice->m_texMan.AddDeferred(image);
