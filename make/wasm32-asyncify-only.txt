@@ -5,11 +5,13 @@ Emscripten_GLES_SwapWindow
 Emscripten_ShowMessagebox
 Emscripten_UpdateWindowFramebuffer
 ExportPOVCommand::Execute()
+Inspector::WebServer::Start(int, std::__2::basic_string<char, std::__2::char_traits<char>, std::__2::allocator<char>> const&)
 InspectorPluginLoad
 LiveEditCommand::Execute()
 LiveUI::RenderUI()
 PinTable::LoadGameFromFilename(std::__2::filesystem::path const&, VPXFileFeedback&)
 PinTable::LoadGameFromJSONPack(JSONSerializer::Deserializer&, VPXFileFeedback&)
+PinTable::LoadGameFromVPXStorage(VPXFileFeedback&)
 PlayTableCommand::Execute()
 Player::ApplyTableTransition(PinTable*, bool, Player::StackedTable const*)
 Player::GameLoop()
@@ -19,10 +21,18 @@ Player::PrepareFrame()
 Player::UpdateGameLogic()
 Player::~Player()
 PovEditCommand::Execute()
-Renderer::RenderUIScene()
+RenderDevice::BGFXDesktopRenderLoop(bgfx::Init const&)
+RenderDevice::RenderDevice(VPX::Window*, bool, bool, bool, bool, bool, int, VideoSyncMode&)
+RenderDevice::RenderThread(RenderDevice*, bgfx::Init)
+RenderDevice::~RenderDevice()
+Renderer::Renderer(PinTable*, VPX::Window*, VideoSyncMode&, StereoMode)
 Renderer::~Renderer()
 RunPlayerSessions(PinTable*, Player::PlayMode, std::__2::function<void (Player*)> const&)
 TableBasedCommand::LoadTable()
+VPX::EditorUI::EditorUI::RenderUI()
+VPX::EditorUI::PartLibraryPanel::CommitPlacement()
+VPX::EditorUI::PartLibraryPanel::ImportPack(std::__2::filesystem::path const&)
+VPX::EditorUI::PartLibraryPanel::Render()
 VPX::EditorUI::PartLibraryPanel::RenderLibraryFolder(VPX::EditorUI::PartLibraryPanel::LibraryFolder const&, std::__2::basic_string<char, std::__2::char_traits<char>, std::__2::allocator<char>> const&)
 VPX::EditorUI::PartLibraryPanel::StartPlacement()
 ValidateTournamentCommand::Execute()
@@ -42,6 +52,7 @@ rtsp_read_packet
 rtsp_write_packet
 sap_fetch_packet
 std::__2::__function::__func<RenderDevice::RenderDevice(VPX::Window*, bool, bool, bool, bool, bool, int, VideoSyncMode&)::$_0, void ()>::operator()()
+std::__2::unique_ptr<Player, std::__2::default_delete<Player>>::~unique_ptr[abi:nqe220108]()
 tcp_accept
 tcp_open
 tcp_read

@@ -34,9 +34,9 @@ echo ""
 
 NUM_PROCS=$(sysctl -n hw.ncpu 2>/dev/null || nproc)
 
-export CFLAGS="-pthread -msimd128"
-export CXXFLAGS="-pthread -msimd128"
-export LDFLAGS="-pthread -msimd128"
+export CFLAGS="-pthread -fwasm-exceptions -msimd128"
+export CXXFLAGS="-pthread -fwasm-exceptions -msimd128"
+export LDFLAGS="-pthread -fwasm-exceptions -msimd128"
 
 mkdir -p "external/wasm-wasm32/${BUILD_TYPE}"
 cd "external/wasm-wasm32/${BUILD_TYPE}"
