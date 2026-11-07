@@ -3,6 +3,9 @@
 #pragma once
 
 #include "pole/pole.h"
+#ifdef __EMSCRIPTEN__
+#include "utils/BrowserFileStore.h"
+#endif
 
 
 class InMemStream;
@@ -31,12 +34,19 @@ public:
       , m_data(std::move(data))
    {
    }
+#ifdef __EMSCRIPTEN__
+   ~Sound() { BrowserFileStore::Release(m_storedData); }
+#endif
 
    const string& GetName() const { return m_name; }
    void SetName(const string& name) { m_name = name; }
    const std::filesystem::path& GetImportPath() const { return m_path; }
+#ifdef __EMSCRIPTEN__
+   size_t GetFileSize() const;
+#else
    size_t GetFileSize() const { return m_data.size(); }
-   const uint8_t* GetFileRaw() const { return m_data.data(); }
+#endif
+   const uint8_t* GetFileRaw() const { return GetData().data(); }
    void SetFromFileData(const std::filesystem::path& filename, vector<uint8_t> filedata);
 
    bool SaveToFile(const std::filesystem::path& filename) const;
@@ -69,9 +79,23 @@ private:
       return extension.empty() || extension == ".wav";
    }
 
+#ifdef __EMSCRIPTEN__
+   // On the web, a table's sound files wait outside the wasm heap until first played (BrowserFileStore)
+   void MoveDataToBrowser();
+   const vector<uint8_t>& GetData() const; // m_data, brought back from the browser first if needed
+#else
+   const vector<uint8_t>& GetData() const { return m_data; }
+#endif
+
    string m_name;
    std::filesystem::path m_path; // Original file import path
+#ifdef __EMSCRIPTEN__
+   mutable vector<uint8_t> m_data; // Undecoded data from original file
+   mutable BrowserFileStore::Entry m_storedData; // Or where it waits in the browser
+   mutable std::mutex m_storedDataMutex;
+#else
    vector<uint8_t> m_data; // Undecoded data from original file
+#endif
    int m_volume = 0;
    int m_pan = 0;
    int m_frontRearFade = 0;

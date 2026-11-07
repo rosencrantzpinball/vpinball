@@ -448,6 +448,8 @@ set(VPX_SOURCES
    src/utils/vectorsort.h
    src/utils/fileio.cpp
    src/utils/fileio.h
+   src/utils/BrowserFileStore.cpp
+   src/utils/BrowserFileStore.h
    src/utils/lzwreader.cpp
    src/utils/lzwreader.h
    src/utils/hash.h

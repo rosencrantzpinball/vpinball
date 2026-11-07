@@ -12,6 +12,9 @@
 #if defined(CRASH_HANDLER) || defined(VPX_STANDALONE_CRASH_HANDLER)
 #include "utils/CrashHandler.h"
 #include "utils/BlackBox.h"
+#ifdef __EMSCRIPTEN__
+#include "utils/BrowserFileStore.h"
+#endif
 #endif
 
 #include <initguid.h>
@@ -142,6 +145,10 @@ VPApp::VPApp()
 #endif
 {
    g_app = this;
+
+#ifdef __EMSCRIPTEN__
+   BrowserFileStore::Start(); // Ready by the time a table is opened
+#endif
 
    // On Linux the main thread name is the process comm, which is what task
    // monitors (top, btop, ...) display, so leave it as the executable name.

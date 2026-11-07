@@ -1107,6 +1107,9 @@ Texture* Texture::CreateFromObjectReader(IObjectReader& reader, PinTable* const 
       tex->SetIsOpaque(isOpaque);
    if (!isMD5Dirty)
       tex->SetMD5Hash(md5Hash);
+#ifdef __EMSCRIPTEN__
+   ppb->MoveToBrowser();
+#endif
    return tex;
 }
 
@@ -1195,7 +1198,12 @@ std::shared_ptr<const BaseTexture> Texture::GetRawBitmap(bool resizeOnLowMem, un
          return buffer;
    }
    //PLOGD << "Decoding image " << m_name;
-   auto buffer = std::shared_ptr<BaseTexture>(BaseTexture::CreateFromData(m_ppb->m_buffer.data(), m_ppb->m_buffer.size(), true, maxTexDimension, resizeOnLowMem));
+   std::shared_ptr<BaseTexture> buffer;
+   {
+      vector<uint8_t> readBack; // The image file, if it waits outside the wasm heap (web)
+      const vector<uint8_t>& data = m_ppb->GetData(readBack);
+      buffer = std::shared_ptr<BaseTexture>(BaseTexture::CreateFromData(data.data(), data.size(), true, maxTexDimension, resizeOnLowMem));
+   }
    if (buffer == nullptr)
       return nullptr;
    if (m_width != buffer->m_realWidth)
@@ -1225,7 +1233,11 @@ void Texture::UpdateMD5() const
    if (!m_isMD5Dirty)
       return;
    uint8_t md5[16];
-   generateMD5(m_ppb->m_buffer.data(), m_ppb->m_buffer.size(), md5);
+   {
+      vector<uint8_t> readBack; // The image file, if it waits outside the wasm heap (web)
+      const vector<uint8_t>& data = m_ppb->GetData(readBack);
+      generateMD5(data.data(), data.size(), md5);
+   }
    const std::lock_guard<std::mutex> lock(m_imageBufferMutex);
    if (m_isMD5Dirty) // Otherwise computed meanwhile by another thread, and maybe already read without locking
       SetMD5HashLocked(md5);

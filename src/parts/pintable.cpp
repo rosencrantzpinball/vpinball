@@ -1542,6 +1542,9 @@ HRESULT PinTable::LoadGameFromFilename(const std::filesystem::path &filename, VP
    SetDirtyScript(SaveDirtyState::Clean);
 
    PLOGI << "Table loaded"; // For profiling
+#ifdef __EMSCRIPTEN__
+   PLOGI << "Images and sounds moved to the browser's file store: " << (BrowserFileStore::GetStoredSize() >> 20) << " MB";
+#endif
 
 #ifdef __EMSCRIPTEN__
    // The web page copies the table into its in-memory file system (/tables/, shell.html) for this one load, and nothing
@@ -1800,6 +1803,16 @@ HRESULT PinTable::LoadGameFromVPXStorage(VPXFileFeedback &feedback)
          std::ranges::sort(loadQueue, [&rootStorage](const LoadTask &a, const LoadTask &b) { return rootStorage.streamOffset(a.name) < rootStorage.streamOffset(b.name); });
  
          progschj::ThreadPool pool(IsNetworkPath(m_filename) ? 1 : g_app->GetLogicalNumberOfProcessors());
+
+#ifdef __EMSCRIPTEN__
+         // Let the browser's file store open its file, so the images and sounds can move there as they load
+         for (int i = 0; i < 100 && BrowserFileStore::IsStarting(); i++)
+   #ifndef __wasm64__
+            emscripten_sleep(10);
+   #else
+            SDL_Delay(10);
+   #endif
+#endif
 
          // Dispatch all load tasks & wait, updating the progress bar on UI thread
          feedback.SetLength(static_cast<unsigned int>(loadQueue.size()));

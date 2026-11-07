@@ -220,17 +220,51 @@ Sound* Sound::CreateFromStream(POLE::Stream& stream, const int LoadFileVersion)
          outputTarget = SNDOUT_BACKGLASS;
    }
 
-   Sound* const pps = new Sound(name, fsPath, data);
+   Sound* const pps = new Sound(name, fsPath, std::move(data));
    pps->SetOutputTarget(static_cast<SoundOutTypes>(outputTarget));
    pps->SetVolume(volume);
    pps->SetPan(pan);
    pps->SetFrontRearFade(frontRearFade);
+#ifdef __EMSCRIPTEN__
+   pps->MoveDataToBrowser();
+#endif
    return pps;
 }
+
+#ifdef __EMSCRIPTEN__
+void Sound::MoveDataToBrowser()
+{
+   const std::lock_guard lock(m_storedDataMutex);
+   if (m_storedData.size == 0)
+      m_storedData = BrowserFileStore::Store(m_data);
+}
+
+const vector<uint8_t>& Sound::GetData() const
+{
+   const std::lock_guard lock(m_storedDataMutex);
+   if (m_storedData.size)
+   {
+      // Kept from then on, as the sound's players use it until the table ends
+      m_data = BrowserFileStore::Read(m_storedData);
+      BrowserFileStore::Release(m_storedData);
+   }
+   return m_data;
+}
+
+size_t Sound::GetFileSize() const
+{
+   const std::lock_guard lock(m_storedDataMutex);
+   return m_storedData.size ? m_storedData.size : m_data.size();
+}
+#endif
 
 void Sound::SetFromFileData(const std::filesystem::path& filename, vector<uint8_t> filedata)
 {
    m_path = filename;
+#ifdef __EMSCRIPTEN__
+   const std::lock_guard lock(m_storedDataMutex);
+   BrowserFileStore::Release(m_storedData);
+#endif
    m_data = std::move(filedata);
 }
 
@@ -238,7 +272,8 @@ bool Sound::SaveToFile(const std::filesystem::path& filename) const
 {
    if (FILE* f = open_file(filename, "wb"); f)
    {
-      fwrite(m_data.data(), 1, m_data.size(), f);
+      const vector<uint8_t>& data = GetData();
+      fwrite(data.data(), 1, data.size(), f);
       fclose(f);
       return true;
    }
@@ -258,9 +293,10 @@ void Sound::SaveToStream(InMemStream* pstm) const
    pstm->Write(path.c_str(), pathLen);
    pstm->Write(&dummyLen, sizeof(int32_t)); // Used to have the same name again in lower case, now just save an empty string for backward compatibility
    pstm->Write(&dummyPath, dummyLen);
-   if (HasStorableWavHeader(m_data))
+   const vector<uint8_t>& data = GetData();
+   if (HasStorableWavHeader(data))
    {
-      const auto waveHeader = reinterpret_cast<const WaveHeader*>(m_data.data());
+      const auto waveHeader = reinterpret_cast<const WaveHeader*>(data.data());
       WavFmt wfx;
       wfx.wFormatTag = waveHeader->wFormatTag;
       wfx.nChannels = waveHeader->wNChannels;
@@ -270,15 +306,15 @@ void Sound::SaveToStream(InMemStream* pstm) const
       wfx.wBitsPerSample = waveHeader->wBitsPerSample;
       wfx.cbSize = 0;
       pstm->Write(&wfx, sizeof(WavFmt));
-      const int32_t sampleDataLength = static_cast<int32_t>(m_data.size() - sizeof(WaveHeader));
+      const int32_t sampleDataLength = static_cast<int32_t>(data.size() - sizeof(WaveHeader));
       pstm->Write(&sampleDataLength, sizeof(int32_t));
-      pstm->Write(m_data.data() + sizeof(WaveHeader), static_cast<size_t>(sampleDataLength));
+      pstm->Write(data.data() + sizeof(WaveHeader), static_cast<size_t>(sampleDataLength));
    }
    else
    {
-      const int32_t dataLength = static_cast<int32_t>(m_data.size());
+      const int32_t dataLength = static_cast<int32_t>(data.size());
       pstm->Write(&dataLength, sizeof(int32_t));
-      pstm->Write(m_data.data(), static_cast<size_t>(dataLength));
+      pstm->Write(data.data(), static_cast<size_t>(dataLength));
    }
 
    // Begin NEW_SOUND_FORMAT_VERSION data

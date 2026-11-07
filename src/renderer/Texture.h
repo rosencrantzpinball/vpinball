@@ -173,8 +173,12 @@ public:
 
    size_t GetEstimatedGPUSize() const;
 
-   size_t GetFileSize() const { return m_ppb->m_buffer.size(); }
+   size_t GetFileSize() const { return m_ppb->GetSize(); }
+#ifdef __EMSCRIPTEN__
+   const uint8_t *GetFileRaw() const { m_ppb->RestoreBuffer(); return m_ppb->m_buffer.data(); }
+#else
    const uint8_t *GetFileRaw() const { return m_ppb->m_buffer.data(); }
+#endif
    const std::filesystem::path& GetFilePath() const { return m_ppb->m_path; }
    bool SaveFile(const std::filesystem::path &filename) const { return m_ppb->WriteToFile(filename); }
 
