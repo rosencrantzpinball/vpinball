@@ -1,9 +1,29 @@
 --- a/src/renderer_webgpu.cpp
 +++ b/src/renderer_webgpu.cpp
-@@ -7661,6 +7661,55 @@
+@@ -12,6 +12,9 @@
+ #	endif // BX_PLATFORM_OSX
+ #	include <bx/pixelformat.h>
+ #	include "renderer_webgpu.h"
++#	if BX_PLATFORM_EMSCRIPTEN
++#		include <emscripten/em_asm.h>
++#	endif // BX_PLATFORM_EMSCRIPTEN
+ 
+ namespace bgfx { namespace wgpu
+ {
+@@ -4707,7 +4710,7 @@
+ 			.label = WGPU_STRING_VIEW_INIT,
+ 			.usage = 0
+ 				| (storage ? WGPUBufferUsage_Storage : 0)
+-				| (storage ? WGPUBufferUsage_CopySrc : 0)
++				| WGPUBufferUsage_CopySrc // So that the renewal of buffers can copy it
+ 				| (indirect
+ 					? WGPUBufferUsage_Indirect
+ 					: _vertex ? WGPUBufferUsage_Vertex : WGPUBufferUsage_Index
+@@ -7660,6 +7663,153 @@
+ 			SwapChainWGPU& swapChain = getFrameBuffer(m_windows[ii]).m_swapChain;
  			wgpuRelease(swapChain.m_textureView);
  			wgpuRelease(swapChain.m_texture);
- 		}
++		}
 +
 +		// WebKit's WebGPU keeps, for each texture view, the id of every command encoder the view was used in (of every use, in
 +		// releases before 303984@main, which keep one for every use of a buffer too), and drops them only with the object
@@ -53,6 +73,103 @@
 +				}
 +			}
 +		}
++
++		// Safari before 26.4 (WebKit before 303984@main) keeps such a record for every use of a buffer too, vertex and index
++		// buffers included, which bgfx keeps for the whole session. There, renew those as well, a vertex and an index buffer
++		// every 8 frames in turn: copy each into a new buffer, in a command buffer of its own, which the queue runs after every
++		// write to the old buffer so far (bgfx writes buffers only through the queue), use the new one from then on, and
++		// destroy the old one 16 frames later, when the GPU is done with it, so that at most four buffers exist twice at once
++		// (old ones kept for 120 frames held about 60 MB of a table's geometry twice). Buffers that compute shaders or
++		// indirect draws use are left as they are.
++		{
++			static const bool s_renewBuffers = 0 != EM_ASM_INT({
++				const ua = navigator.userAgent;
++				const at = ua.indexOf("Version/");
++				return at >= 0 && ua.indexOf("Safari/") >= 0 && ua.indexOf("Chrome/") < 0 && ua.indexOf("Android") < 0
++					&& parseFloat(ua.substring(at + 8)) < 26.4 ? 1 : 0;
++			});
++
++			struct PendingDestroy
++			{
++				WGPUBuffer buffer;
++				uint32_t frame;
++			};
++
++			static PendingDestroy s_pending[8];
++			static uint32_t s_numPending = 0;
++			static uint32_t s_frame = 0;
++			static uint32_t s_nextVertexBuffer = 0;
++			static uint32_t s_nextIndexBuffer = 0;
++			++s_frame;
++
++			for (uint32_t ii = 0; ii < s_numPending;)
++			{
++				if (s_frame - s_pending[ii].frame >= 16)
++				{
++					wgpuDestroy(s_pending[ii].buffer);
++					s_pending[ii] = s_pending[--s_numPending];
++				}
++				else
++				{
++					++ii;
++				}
++			}
++
++			if (s_renewBuffers
++			&&  0 == s_frame % 8
++			&&  s_numPending + 2 <= BX_COUNTOF(s_pending) )
++			{
++				const auto renew = [&](BufferWGPU& _buffer, WGPUBufferUsage _usage)
++				{
++					if (NULL == _buffer.m_buffer
++					||  0 != (_buffer.m_flags & (BGFX_BUFFER_DRAW_INDIRECT | BGFX_BUFFER_COMPUTE_READ_WRITE) ) )
++					{
++						return false;
++					}
++
++					const uint64_t size = bx::alignUp(_buffer.m_size, 4);
++					WGPUBufferDescriptor bufferDesc =
++					{
++						.nextInChain      = NULL,
++						.label            = WGPU_STRING_VIEW_INIT,
++						.usage            = _usage | WGPUBufferUsage_CopyDst | WGPUBufferUsage_CopySrc,
++						.size             = size,
++						.mappedAtCreation = false,
++					};
++
++					WGPUBuffer buffer = WGPU_CHECK(wgpuDeviceCreateBuffer(m_device, &bufferDesc) );
++					WGPUCommandEncoder encoder = WGPU_CHECK(wgpuDeviceCreateCommandEncoder(m_device, NULL) );
++					WGPU_CHECK(wgpuCommandEncoderCopyBufferToBuffer(encoder, _buffer.m_buffer, 0, buffer, 0, size) );
++					WGPUCommandBuffer commandBuffer = WGPU_CHECK(wgpuCommandEncoderFinish(encoder, NULL) );
++					WGPU_CHECK(wgpuQueueSubmit(m_cmd.m_queue, 1, &commandBuffer) );
++					wgpuRelease(commandBuffer);
++					wgpuRelease(encoder);
++
++					s_pending[s_numPending++] = { _buffer.m_buffer, s_frame };
++					_buffer.m_buffer = buffer;
++					return true;
++				};
++
++				for (uint32_t ii = 0; ii < BGFX_CONFIG_MAX_VERTEX_BUFFERS; ++ii)
++				{
++					const uint32_t idx = s_nextVertexBuffer;
++					s_nextVertexBuffer = (s_nextVertexBuffer + 1) % BGFX_CONFIG_MAX_VERTEX_BUFFERS;
++					if (renew(m_vertexBuffers[idx], WGPUBufferUsage_Vertex) )
++					{
++						break;
++					}
++				}
++
++				for (uint32_t ii = 0; ii < BGFX_CONFIG_MAX_INDEX_BUFFERS; ++ii)
++				{
++					const uint32_t idx = s_nextIndexBuffer;
++					s_nextIndexBuffer = (s_nextIndexBuffer + 1) % BGFX_CONFIG_MAX_INDEX_BUFFERS;
++					if (renew(m_indexBuffers[idx], WGPUBufferUsage_Index) )
++					{
++						break;
++					}
++				}
++			}
+ 		}
  #endif // BX_PLATFORM_EMSCRIPTEN
  
- 		if (updateResolution(_render->m_mainSwapChain, _render->m_reset) )
