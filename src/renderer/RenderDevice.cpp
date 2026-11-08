@@ -410,7 +410,9 @@ static void CollectFrameGarbage()
    if (now < nextCollection)
       return;
    nextCollection = now + 10000.;
-   EM_ASM({ for (let i = 0; i < 4; i++) new WebAssembly.Memory({ initial: 1024 }); });
+   // Safari caps the wasm memories of a page's process at three times the process's memory limit, and where the heap
+   // fills that, making one throws, but only after JavaScriptCore has collected, which is all this is for
+   EM_ASM({ try { for (let i = 0; i < 4; i++) new WebAssembly.Memory({ initial: 1024 }); } catch (e) {} });
 }
 #endif
 
