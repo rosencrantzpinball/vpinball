@@ -1144,6 +1144,14 @@ void Player::InitTableSession(const bool isInitial)
 #endif
    }
 
+#ifdef __EMSCRIPTEN__
+   // The texture loading threads have ended, but the page keeps their workers (ended only a second after startup, see
+   // "Startup done") while the renderer starts and makes its render targets, which for a table slow to start is when the
+   // page's memory peaks. A moment from now, once the page has taken those workers back, end all the idle ones but four:
+   // the threads still to start take those, and the page starts new workers if more are needed
+   MAIN_THREAD_EM_ASM({ setTimeout(() => { for (const worker of PThread.unusedWorkers.splice(4)) worker.terminate(); }, 100); });
+#endif
+
    //----------------------------------------------------------------------------------
 
    PLOGI << "Initializing renderer"; // For profiling
