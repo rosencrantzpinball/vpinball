@@ -268,7 +268,7 @@ fi
 # build pinmame
 #
 
-PINMAME_EXPECTED_SHA="${PINMAME_SHA}"
+PINMAME_EXPECTED_SHA="${PINMAME_SHA}-001"
 PINMAME_FOUND_SHA="$([ -f pinmame/cache.txt ] && cat pinmame/cache.txt || echo "")"
 
 if [ "${PINMAME_EXPECTED_SHA}" != "${PINMAME_FOUND_SHA}" ]; then
@@ -282,6 +282,9 @@ if [ "${PINMAME_EXPECTED_SHA}" != "${PINMAME_FOUND_SHA}" ]; then
    tar xzf pinmame-${PINMAME_SHA}.tar.gz
    mv pinmame-${PINMAME_SHA} pinmame
    cd pinmame
+   # PinMAME's POSIX time fence gives sem_timedwait() a duration where it takes a deadline, so the wait returns at once
+   # and the emulation runs unthrottled: a ROM table then fills the page's memory within minutes
+   patch -p1 < ../../../../../platforms/wasm-wasm32/pinmame-time-fence-wait.patch
    cp cmake/libpinmame/CMakeLists.txt .
    CFLAGS="${CFLAGS} -I$PWD/../../zlib/zlib" CXXFLAGS="${CXXFLAGS} -I$PWD/../../zlib/zlib" emcmake cmake \
       -DCMAKE_C_FLAGS="${CFLAGS} -I$PWD/../../zlib/zlib" \
