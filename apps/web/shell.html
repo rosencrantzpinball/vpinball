@@ -90,6 +90,22 @@ html, body { margin: 0; height: 100%; background: #000; overflow: hidden; font-f
    #drop { padding: 24px 16px; }
    #drop p { margin-bottom: 20px; }
 }
+/* Tables the site offers (tables.json beside the page): a large button each, above opening a table of your own */
+#hosted { display: flex; flex-direction: column; gap: 10px; margin-bottom: 24px; }
+#hosted:empty { display: none; }
+#drop #hosted button { display: flex; flex-direction: column; align-items: center; gap: 3px; width: 100%; margin: 0; padding: 16px 20px; border-radius: 14px;
+   background: var(--accent); color: var(--on-accent); }
+#hosted b { font-size: 18px; font-weight: 700; }
+#hosted span { font-size: 13px; font-weight: 500; opacity: 0.75; font-variant-numeric: tabular-nums; }
+/* While its table downloads, the button fills with the accent from the left, over a darker one (that the text reads on
+   in both themes), and pulses while the table opens */
+@property --filled { syntax: '<percentage>'; inherits: false; initial-value: 0%; }
+#drop #hosted button.loading { opacity: 1; cursor: default; transition: --filled 0.25s;
+   background: linear-gradient(to right, var(--accent) var(--filled), color-mix(in srgb, var(--accent) 55%, #000) var(--filled)); }
+#drop #hosted button.opening { animation: opening 1.2s ease-in-out infinite; }
+@keyframes opening { 50% { opacity: 0.75; } }
+#drop.hosting #pickFolder { background: var(--surface-high); color: var(--text); }
+#source { margin-left: 6px; color: inherit; }
 /* Phones and tablets: the screen's halves hold the flippers, Launch the plunger, and the bar along the top the rest.
    While VPX's own menu is open, the layer stands aside so that touches reach the menu, all but the bar's Menu button */
 #touch { position: fixed; inset: 0; z-index: 1; display: none; touch-action: none; font: 600 13px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
@@ -127,7 +143,8 @@ html, body { margin: 0; height: 100%; background: #000; overflow: hidden; font-f
    <div id="panel">
       <img id="logo" src="vpinball-logo.png" alt="Visual Pinball">
       <div id="drop">
-         <p>Open a table folder or a table file, or drop one here.</p>
+         <div id="hosted"></div>
+         <p id="dropText">Open a table folder or a table file, or drop one here.</p>
          <button id="pickFolder" disabled>Open table folder</button>
          <button id="pickFiles" disabled>Open table file</button>
          <input id="folderInput" type="file" webkitdirectory hidden>
@@ -146,7 +163,7 @@ html, body { margin: 0; height: 100%; background: #000; overflow: hidden; font-f
          <button id="editSettings" disabled>Edit settings (VPinballX.ini)</button>
       </div>
    </div>
-   <div id="version"></div>
+   <div id="version"><span id="versionText"></span><a id="source" hidden>Source</a></div>
 </div>
 <div id="editor" hidden>
    <div id="editorBar">
@@ -188,6 +205,7 @@ for (const name of ['AudioContext', 'webkitAudioContext']) {
 }
 for (const type of ['pointerup', 'touchend', 'keydown'])
    window.addEventListener(type, () => audioContexts.forEach(c => c.state !== 'running' && c.resume().catch(() => {})), true);
+let runtimeReady = false;
 var Module = {
    canvas: document.getElementById('canvas'),
    arguments: args,
@@ -217,6 +235,9 @@ var Module = {
          startPlayer(args);
          return;
       }
+      runtimeReady = true;
+      for (const b of document.querySelectorAll('#hosted button'))
+         b.disabled = false;
       document.getElementById('pickFolder').disabled = false;
       document.getElementById('pickFiles').disabled = false;
       const editSettings = document.getElementById('editSettings');
@@ -225,7 +246,7 @@ var Module = {
          editSettings.textContent = 'Edit settings (available after you play a table once)';
       document.getElementById('progress').hidden = true;
       setStatus('');
-      document.getElementById('version').textContent = Module.UTF8ToString(Number(Module._VPinballGetVersionStringFull()));
+      document.getElementById('versionText').textContent = Module.UTF8ToString(Number(Module._VPinballGetVersionStringFull()));
    },
 };
 // The wasm32 build's heap: Safari's threads don't see memory grown by another thread, so it starts as large as the browser
@@ -715,6 +736,150 @@ async function importTableFiles(files) {
    importFiles(out);
 }
 
+// Tables the page's site offers: an optional tables.json beside the page lists them, each cut in pieces (GitHub Pages
+// takes files of at most 100 MB) named by their contents, which the page downloads showing its progress, keeps in the
+// browser for the next visit, and opens as one table file. { "tables": [{ "title", "subtitle", "file": the table file's
+// name, "parts": [{ "url", "size" }] }], "source": the build's source } (a piece's "sha256" is for people, and unused)
+async function loadHostedTables() {
+   let site;
+   try {
+      const response = await fetch('tables.json', { cache: 'no-cache' });
+      if (!response.ok)
+         return;
+      site = await response.json();
+   } catch (e) {
+      return;
+   }
+   if (typeof site.source === 'string') {
+      const source = document.getElementById('source');
+      source.href = site.source;
+      source.hidden = false;
+   }
+   const tables = Array.isArray(site.tables) ? site.tables.filter(t => Array.isArray(t.parts) && t.parts.length > 0) : [];
+   if (tables.length === 0)
+      return;
+   document.getElementById('hosted').replaceChildren(...tables.map((table) => {
+      const total = table.parts.reduce((sum, p) => sum + p.size, 0);
+      const b = document.createElement('button');
+      const title = document.createElement('b');
+      title.textContent = 'Play ' + table.title;
+      const detail = document.createElement('span');
+      detail.textContent = (table.subtitle ? table.subtitle + ' · ' : '') + formatMB(total);
+      b.append(title, detail);
+      b.disabled = !runtimeReady;
+      b.onclick = () => playHosted(table, total, b);
+      return b;
+   }));
+   document.getElementById('drop').classList.add('hosting');
+   document.getElementById('dropText').textContent = 'Or play a table of your own: open its folder or its file, or drop it here.';
+   // The pieces of tables the site no longer lists (an earlier version's) leave the browser's storage
+   if (window.caches)
+      caches.open('vpinball-tables').then(async (cache) => {
+         const listed = new Set(tables.flatMap(t => t.parts.map(p => new URL(p.url, location.href).href)));
+         for (const request of await cache.keys())
+            if (!listed.has(request.url))
+               await cache.delete(request);
+      }).catch(() => {});
+}
+
+// One piece, its progress told as it arrives. XMLHttpRequest hands it over as a blob, which never passes through the
+// page's own memory (a phone has little to spare while a table loads). A piece's name carries its SHA-256, so no cache
+// holds another piece under it: its size is the check left, against a download cut short, which is tried once more
+function requestPart(part, progress, again) {
+   return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('GET', part.url);
+      xhr.responseType = 'blob';
+      if (again)
+         xhr.setRequestHeader('Cache-Control', 'no-cache');
+      xhr.onprogress = (e) => progress(e.loaded);
+      xhr.onload = () => {
+         if (xhr.status !== 200)
+            reject(new Error(`${xhr.status} ${xhr.statusText}`));
+         else if (xhr.response.size !== part.size)
+            reject(new Error('a piece arrived cut short'));
+         else
+            resolve(xhr.response);
+      };
+      xhr.onerror = () => reject(new Error('the connection failed'));
+      xhr.onabort = () => reject(new Error('the download was stopped'));
+      xhr.send();
+   });
+}
+async function downloadPart(part, progress) {
+   try {
+      return await requestPart(part, progress, false);
+   } catch (e) {
+      progress(0);
+      return await requestPart(part, progress, true);
+   }
+}
+
+let hostedStarted = false;
+// The table's button shows the progress: it fills as the pieces arrive, and tells how much has, of how much, how fast
+async function playHosted(table, total, button) {
+   if (hostedStarted)
+      return;
+   hostedStarted = true;
+   const buttons = document.querySelectorAll('#hosted button, #pickFolder, #pickFiles');
+   for (const b of buttons)
+      b.disabled = true;
+   const [title, detail] = button.children;
+   const label = [title.textContent, detail.textContent];
+   button.classList.add('loading');
+   setStatus('');
+   const start = performance.now();
+   let done = 0, downloaded = 0, fetching = false;
+   // Downloading, once a piece isn't in the browser's storage; until then, reading them from there
+   const show = (bytes) => {
+      button.style.setProperty('--filled', (100 * bytes / total).toFixed(1) + '%');
+      const seconds = (performance.now() - start) / 1000;
+      const rate = downloaded > 0 && seconds > 1 ? ` · ${(downloaded / 1048576 / seconds).toFixed(1)} MB/s` : '';
+      title.textContent = (fetching ? 'Downloading ' : 'Loading ') + table.title;
+      detail.textContent = fetching ? `${formatMB(bytes)} of ${formatMB(total)}${rate}` : 'From this device';
+   };
+   try {
+      const cache = window.caches ? await caches.open('vpinball-tables').catch(() => null) : null;
+      const blobs = [];
+      for (const part of table.parts) {
+         let blob = null;
+         const cached = cache ? await cache.match(part.url).catch(() => null) : null;
+         if (cached) {
+            blob = await cached.blob();
+            if (blob.size !== part.size)
+               blob = null;
+         }
+         if (!blob) {
+            fetching = true;
+            show(done);
+            const before = downloaded;
+            blob = await downloadPart(part, (n) => {
+               downloaded = before + n;
+               show(done + n);
+            });
+            downloaded = before + part.size;
+            if (cache)
+               await cache.put(part.url, new Response(blob)).catch(() => {});
+         }
+         blobs.push(blob);
+         done += part.size;
+         show(done);
+      }
+      title.textContent = 'Opening ' + table.title;
+      button.classList.add('opening');
+      await importTableFiles([new File(blobs, table.file)]);
+   } catch (e) {
+      console.error(e);
+      hostedStarted = false;
+      button.classList.remove('loading', 'opening');
+      button.style.removeProperty('--filled');
+      [title.textContent, detail.textContent] = label;
+      setStatus(`The download stopped (${e.message}). Check your connection and try again: what arrived is kept.`);
+      for (const b of buttons)
+         b.disabled = false;
+   }
+}
+
 async function readHandle(handle, prefix, out) {
    if (handle.kind === 'file') {
       out.push({ path: prefix + handle.name, file: await handle.getFile() });
@@ -790,6 +955,9 @@ drop.ondrop = async (e) => {
       await readEntry(root, root.isFile ? 'files/' : '', out);
    importFiles(out);
 };
+
+if (args.length === 0 && !switchingBuild)
+   loadHostedTables();
 </script>
 </body>
 </html>
