@@ -561,7 +561,7 @@ async function readZip(file) {
    }));
 }
 
-async function importFiles(entries) {
+async function importFiles(entries, hosted = null) {
    let done = 0;
    const total = entries.length;
    for (const { path, file } of entries) {
@@ -580,7 +580,7 @@ async function importFiles(entries) {
       return;
    }
    if (tables.length === 1) {
-      play(tables[0]);
+      play(tables[0], hosted);
       return;
    }
    setStatus('Select the table to play');
@@ -588,7 +588,7 @@ async function importFiles(entries) {
    list.replaceChildren(...tables.map(t => {
       const b = document.createElement('button');
       b.textContent = t.substring(t.lastIndexOf('/') + 1);
-      b.onclick = () => play(t);
+      b.onclick = () => play(t, hosted);
       return b;
    }));
 }
@@ -707,18 +707,34 @@ function showTouch() {
    setTimeout(() => touchLayer.querySelectorAll('.hint').forEach(h => h.classList.add('gone')), 6000);
 }
 
+// A hosted table may ask for VPX's own score view on phones and tablets held upright (tables.json "phoneScoreView"),
+// where its own score display, laid out for a landscape screen, comes out small and squeezed: in the top-left corner,
+// under the touch controls' bar, half the screen wide in a DMD's 4:1 shape. It goes in the table's settings file,
+// beside the table, which VPX reads as it loads it
+function writePhoneScoreView(table) {
+   if (!touchDevice || innerHeight <= innerWidth)
+      return;
+   const bar = touchLayer.querySelector('.bar').getBoundingClientRect();
+   const x = Math.round(bar.left);
+   const width = Math.round(innerWidth / 2 - x);
+   Module.FS.writeFile(table.replace(/\.[^./]*$/, '.ini'), `[ScoreView]\nScoreViewOutput = 2\nScoreViewWndX = ${x}\n`
+      + `ScoreViewWndY = ${Math.round(bar.bottom + 6)}\nScoreViewWidth = ${width}\nScoreViewHeight = ${Math.round(width / 4)}\n`);
+}
+
 let started = false;
-function play(table) {
+function play(table, hosted = null) {
    if (started)
       return;
    started = true;
    picker.classList.remove('shown');
    showTouch();
+   if (hosted?.phoneScoreView)
+      writePhoneScoreView(table);
    document.getElementById('canvas').focus();
    startPlayer(['-play', table]);
 }
 
-async function importTableFiles(files) {
+async function importTableFiles(files, hosted = null) {
    const out = [];
    try {
       for (const f of files) {
@@ -733,7 +749,7 @@ async function importTableFiles(files) {
       setStatus(e.message);
       return;
    }
-   importFiles(out);
+   importFiles(out, hosted);
 }
 
 // Tables the page's site offers: an optional tables.json beside the page lists them, each cut in pieces (GitHub Pages
@@ -867,7 +883,7 @@ async function playHosted(table, total, button) {
       }
       title.textContent = 'Opening ' + table.title;
       button.classList.add('opening');
-      await importTableFiles([new File(blobs, table.file)]);
+      await importTableFiles([new File(blobs, table.file)], table);
    } catch (e) {
       console.error(e);
       hostedStarted = false;
