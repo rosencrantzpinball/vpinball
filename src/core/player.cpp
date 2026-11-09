@@ -1001,7 +1001,9 @@ void Player::InitTableSession(const bool isInitial)
 #ifdef __EMSCRIPTEN__
       // Images that only parts hidden in the table use, or that no part uses (the script swapping them in, or nothing), can
       // be most of a table's textures, which the wasm heap would hold for good: they are loaded once drawn (the script
-      // showing a part or swapping an image in), by a thread of their own
+      // showing a part or swapping an image in), by a thread of their own. Not huge ones that the texture cap downsizes (see
+      // hugeImageBytes): those load now with the others and wait as small textures until drawn, as decoded in play, once
+      // the heap has no free region that large, one would raise its top for good (an 8192x8192 lossless WebP by 190 MB)
       std::unordered_set<const Texture*> deferred;
       for (Texture* image : m_ptable->m_vimage)
       {
@@ -1012,8 +1014,13 @@ void Player::InitTableSession(const bool isInitial)
             shown |= StrCompareNoCase(image->m_name, bg);
          for (const WhereUsedInfo& user : where)
             shown = shown || IsPartShownAtLoad(m_ptable, user.whereUsedObjectname);
-         if (!shown)
+         const bool hugeAndDownsized = static_cast<size_t>(image->m_width) * image->m_height * (image->IsHDR() ? 8 : 4) >= hugeImageBytes
+            && (image->m_width > maxTexDim || image->m_height > maxTexDim);
+         if (!shown && !hugeAndDownsized)
+         {
             deferred.insert(image);
+            image->SetLoadedOnceDrawn();
+         }
       }
       PLOGI << deferred.size() << " images that no shown part uses will load once drawn";
 #endif

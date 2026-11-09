@@ -185,6 +185,11 @@ public:
    const uint8_t* GetMD5Hash() const { UpdateMD5(); return m_md5Hash; }
    bool IsOpaque() const override { UpdateOpaque(); return m_isOpaque; }
    bool IsHDR() const;
+#ifdef __EMSCRIPTEN__
+   // The image's texture loads once drawn, by a thread of its own that also finds out whether the image is opaque (see
+   // Player::InitTableSession): until then the image reads as not opaque, as the transparent placeholder drawn meanwhile is
+   void SetLoadedOnceDrawn() const;
+#endif
 
 public:
    string m_name; // Image name (used as a unique identifier)
@@ -214,6 +219,9 @@ private:
    mutable uint8_t m_md5Hash[16] = {};
    mutable std::atomic<bool> m_isOpaqueDirty { true };
    mutable std::atomic<bool> m_isOpaque { true };
+#ifdef __EMSCRIPTEN__
+   mutable std::atomic<bool> m_loadedOnceDrawn { false }; // See SetLoadedOnceDrawn
+#endif
 };
 
 

@@ -1375,10 +1375,27 @@ void Texture::SetMD5HashLocked(uint8_t* md5) const
       buffer->SetMD5Hash(md5);
 }
 
+#ifdef __EMSCRIPTEN__
+void Texture::SetLoadedOnceDrawn() const
+{
+   const std::lock_guard<std::mutex> lock(m_imageBufferMutex);
+   if (!m_isOpaqueDirty)
+      return;
+   m_loadedOnceDrawn = true;
+   m_isOpaque = false;
+}
+#endif
+
 void Texture::UpdateOpaque() const
 {
    if (!m_isOpaqueDirty)
       return;
+#ifdef __EMSCRIPTEN__
+   // Parts ask as they are drawn, before the texture's own load (at the texture cap's size) finds out: decoding here would
+   // decode the image at full size on the render thread (256 MB for 8192x8192 texels), which the wasm heap then keeps
+   if (m_loadedOnceDrawn)
+      return;
+#endif
    const auto bitmap = GetRawBitmap(false, 0); // Also computes the opacity if it decodes the image
    if (!m_isOpaqueDirty)
       return;
