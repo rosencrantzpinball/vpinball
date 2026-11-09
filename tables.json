@@ -1,10 +1,11 @@
 {
- "source": "https://github.com/rosencrantzpinball/vpinball/tree/a6ce955fff176f00c6e6eb1f84b11eeed4db8a96",
+ "source": "https://github.com/rosencrantzpinball/vpinball/tree/35d4e291231dac971c3d9bcea5c8acaa48d6ea54",
  "tables": [
   {
    "title": "Symphony IX",
    "subtitle": "The Machine of Joy",
    "file": "Symphony IX - The Machine of Joy (Original 2026).vpxz",
+   "phoneScoreView": true,
    "parts": [
     {
      "url": "tables/symphony-ix-0-2c360e78b5fa2f9a.bin",
