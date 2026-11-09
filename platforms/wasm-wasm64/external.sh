@@ -148,7 +148,7 @@ fi
 # build bgfx
 #
 
-BGFX_EXPECTED_SHA="${BGFX_CMAKE_VERSION}-${BGFX_PATCH_SHA}-003"
+BGFX_EXPECTED_SHA="${BGFX_CMAKE_VERSION}-${BGFX_PATCH_SHA}-004"
 BGFX_FOUND_SHA="$([ -f bgfx/cache.txt ] && cat bgfx/cache.txt || echo "")"
 
 if [ "${BGFX_EXPECTED_SHA}" != "${BGFX_FOUND_SHA}" ]; then
@@ -168,7 +168,8 @@ if [ "${BGFX_EXPECTED_SHA}" != "${BGFX_FOUND_SHA}" ]; then
    # WebKit keeps the id of every command encoder a texture view was used in until the view goes (WebKit bug 329399), and
    # older releases the id of every use of a buffer too: bgfx renews its cached texture views and bind groups, its frame
    # buffers' views, its uniform buffers and its occlusion query set every 600 frames on the web, and in Safari before 26.4
-   # its vertex and index buffers, one of each every 8 frames, so Safari's GPU process doesn't grow
+   # its vertex and index buffers, one of each every 8 frames, so Safari's GPU process doesn't grow. It also stops asking
+   # for each submit's completion on the web, where nothing waits for it and the WebGPU bindings keep every such request
    patch -p1 -d bgfx < ../../../../../platforms/wasm-wasm32/bgfx-webgpu-renew-views.patch
    emcmake cmake -S. \
       -DBGFX_BUILD_EXAMPLES=OFF \

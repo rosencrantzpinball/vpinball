@@ -19,7 +19,29 @@
  				| (indirect
  					? WGPUBufferUsage_Indirect
  					: _vertex ? WGPUBufferUsage_Vertex : WGPUBufferUsage_Index
-@@ -7660,6 +7663,153 @@
+@@ -6703,6 +6706,9 @@
+ 		WGPUCommandBuffer commandBuffer = WGPU_CHECK(wgpuCommandEncoderFinish(m_commandEncoder, NULL) );
+ 
+ 		WGPU_CHECK(wgpuQueueSubmit(m_queue, 1, &commandBuffer) );
++	#if !BX_PLATFORM_EMSCRIPTEN
++		// Only wait() reads the counter, and not on the web. There a future that nothing waits on with
++		// wgpuInstanceWaitAny stays in the WebGPU bindings' JavaScript for good: one each submit, all through play
+ 		WGPU_CHECK(wgpuQueueOnSubmittedWorkDone(
+ 			  m_queue
+ 			, {
+@@ -6712,9 +6718,10 @@
+ 				.userdata1   = (void*)uintptr_t(m_counter),
+ 				.userdata2   = NULL,
+ 			}) );
++		++m_counter;
++	#endif // !BX_PLATFORM_EMSCRIPTEN
+ 		wgpuRelease(commandBuffer);
+ 		wgpuRelease(m_commandEncoder);
+-		++m_counter;
+ 
+ 	#if !BX_PLATFORM_EMSCRIPTEN
+ 		WGPU_CHECK(wgpuInstanceProcessEvents(s_renderWGPU->m_instance) );
+@@ -7660,6 +7667,153 @@
  			SwapChainWGPU& swapChain = getFrameBuffer(m_windows[ii]).m_swapChain;
  			wgpuRelease(swapChain.m_textureView);
  			wgpuRelease(swapChain.m_texture);
