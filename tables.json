@@ -1,0 +1,47 @@
+{
+ "source": "https://github.com/rosencrantzpinball/vpinball/tree/a6ce955fff176f00c6e6eb1f84b11eeed4db8a96",
+ "tables": [
+  {
+   "title": "Symphony IX",
+   "subtitle": "The Machine of Joy",
+   "file": "Symphony IX - The Machine of Joy (Original 2026).vpxz",
+   "parts": [
+    {
+     "url": "tables/symphony-ix-0-2c360e78b5fa2f9a.bin",
+     "size": 25165824,
+     "sha256": "2c360e78b5fa2f9ae73bbf1abe167e7665241c9e44e3ec45cd82d6c48b36a465"
+    },
+    {
+     "url": "tables/symphony-ix-1-d060e8367f169cd1.bin",
+     "size": 25165824,
+     "sha256": "d060e8367f169cd1ad3e3aedb864b930ff288f4265103a1173ce40c1bbdbbe2c"
+    },
+    {
+     "url": "tables/symphony-ix-2-891f2c079eeb98a1.bin",
+     "size": 25165824,
+     "sha256": "891f2c079eeb98a112600a5b2632f28e7a8d6c331b32954a08d0080e47fc54e7"
+    },
+    {
+     "url": "tables/symphony-ix-3-91cd033eed166094.bin",
+     "size": 25165824,
+     "sha256": "91cd033eed1660944c12aaee1f0a6e3c458b83b5898e445cba441ce72296b25e"
+    },
+    {
+     "url": "tables/symphony-ix-4-ade5037bce649570.bin",
+     "size": 25165824,
+     "sha256": "ade5037bce64957038ed18980c9fa9f4579c8d8392006f15eecdb676718cef19"
+    },
+    {
+     "url": "tables/symphony-ix-5-aaa8cf270aa54ccc.bin",
+     "size": 25165824,
+     "sha256": "aaa8cf270aa54cccc1c9f37b84513297e85ed317c45e368e3c865ff464788b1f"
+    },
+    {
+     "url": "tables/symphony-ix-6-087647be7e1953d1.bin",
+     "size": 15402240,
+     "sha256": "087647be7e1953d13016c86eb2881117076ca58dd911b71da76359795db70a87"
+    }
+   ]
+  }
+ ]
+}
