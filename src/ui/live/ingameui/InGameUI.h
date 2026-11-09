@@ -54,6 +54,9 @@ private:
    vector<string> m_navigationHistory;
    vector<std::unique_ptr<InGameUIPage>> m_activePages;
    uint32_t m_lastRenderMs = 0;
+#ifdef __EMSCRIPTEN__
+   bool m_openedForPage = false; // What the web page was last told (see Update)
+#endif
 };
 
 }

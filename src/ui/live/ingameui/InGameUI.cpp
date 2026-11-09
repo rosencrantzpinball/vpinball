@@ -28,6 +28,10 @@
 #include "SystemInfoPage.h"
 #include "parts/ball.h"
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
+
 
 namespace VPX::InGameUI
 {
@@ -136,6 +140,16 @@ void InGameUI::Close()
 
 void InGameUI::Update()
 {
+#ifdef __EMSCRIPTEN__
+   // The web page's touch controls stand aside while this UI is open, so touches reach it instead (apps/web/shell.html,
+   // Module.onInGameUI). The loading page doesn't count: the controls aren't in its way
+   if (const bool opened = IsOpened() && !m_player->m_isLoading; opened != m_openedForPage)
+   {
+      m_openedForPage = opened;
+      MAIN_THREAD_ASYNC_EM_ASM({ if (Module.onInGameUI) Module.onInGameUI(!!$0); }, opened ? 1 : 0);
+   }
+#endif
+
    const uint32_t now = msec();
    float elapsed = static_cast<float>(now - m_lastRenderMs) / 1000.f;
    if (elapsed > 1.f)

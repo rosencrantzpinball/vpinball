@@ -2,8 +2,12 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
+<!-- Added to a phone's home screen, the page opens on its own, with the browser's bars out of the way -->
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>Visual Pinball X</title>
 <link rel="icon" type="image/png" href="favicon.png">
 <style>
@@ -86,10 +90,39 @@ html, body { margin: 0; height: 100%; background: #000; overflow: hidden; font-f
    #drop { padding: 24px 16px; }
    #drop p { margin-bottom: 20px; }
 }
+/* Phones and tablets: the screen's halves hold the flippers, Launch the plunger, and the bar along the top the rest.
+   While VPX's own menu is open, the layer stands aside so that touches reach the menu, all but the bar's Menu button */
+#touch { position: fixed; inset: 0; z-index: 1; display: none; touch-action: none; font: 600 13px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+#touch.shown { display: block; }
+#touch.menu { pointer-events: none; }
+#touch.menu .play, #touch.menu .hint { display: none; }
+#touch .bar { position: fixed; top: max(8px, env(safe-area-inset-top)); left: max(8px, env(safe-area-inset-left)); right: max(8px, env(safe-area-inset-right));
+   display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+#touch .pad { pointer-events: auto; touch-action: none; padding: 9px 13px; color: #F3EDE0; background: rgba(20, 19, 17, 0.5); border: 1px solid rgba(216, 180, 90, 0.45);
+   border-radius: 10px; }
+#touch .pad.down { background: rgba(216, 180, 90, 0.6); color: #15120B; }
+#touch .pad[hidden] { display: none; }
+#touch #launch { position: fixed; right: max(12px, env(safe-area-inset-right)); bottom: max(14px, env(safe-area-inset-bottom)); padding: 18px 20px; border-radius: 14px; }
+#touch .hint { position: fixed; bottom: max(22px, env(safe-area-inset-bottom)); font-weight: 400; color: rgba(243, 237, 224, 0.7); transition: opacity 1.2s; pointer-events: none; }
+#touch .hint.gone { opacity: 0; }
+#hintLeft { left: max(14px, env(safe-area-inset-left)); }
+#hintRight { right: calc(max(12px, env(safe-area-inset-right)) + 104px); }
 </style>
 </head>
 <body>
 <canvas id="canvas" tabindex="-1" oncontextmenu="event.preventDefault()"></canvas>
+<div id="touch">
+   <div class="bar">
+      <div class="pad" id="touchMenu" data-code="F12" data-key="F12">Menu</div>
+      <div class="pad play" data-code="Digit5" data-key="5">Coin</div>
+      <div class="pad play" data-code="Digit1" data-key="1">Start</div>
+      <div class="pad play" data-code="Space" data-key=" ">Nudge</div>
+      <div class="pad play" id="touchFull" hidden>Full screen</div>
+   </div>
+   <div class="pad play" id="launch" data-code="Enter" data-key="Enter">Launch</div>
+   <div class="hint" id="hintLeft">◀ hold to flip</div>
+   <div class="hint" id="hintRight">hold to flip ▶</div>
+</div>
 <div id="picker">
    <div id="panel">
       <img id="logo" src="vpinball-logo.png" alt="Visual Pinball">
@@ -106,6 +139,9 @@ html, body { margin: 0; height: 100%; background: #000; overflow: hidden; font-f
             <li><b>Table folder</b>: the folder with your table (a .vpx, a .vpz, or an unzipped .vpz pack) and its extras, like pinmame, music or PUP videos.</li>
             <li><b>Table file</b>: a .vpx or .vpz table on its own, without extras, or a .vpxz bundle, which is a zipped table folder with its extras.</li>
             <li><b>Saving</b>: in Chrome and Edge, changes like high scores, NVRAM and table settings are saved back to the table folder you opened. Other browsers, and table files, keep these changes only until the page is closed. App settings are kept in every browser.</li>
+            <li id="touchHelp" hidden><b>Touch</b>: hold the left or right half of the screen to flip. Hold Launch to pull the plunger back, and let go to shoot.
+               Coin, then Start, are along the top, with Menu for the settings. No sound? The silent switch mutes it.</li>
+            <li id="homeHelp" hidden><b>Whole screen</b>: add the page to your Home Screen (in Safari's Share menu), and open it from there.</li>
          </ul>
          <button id="editSettings" disabled>Edit settings (VPinballX.ini)</button>
       </div>
@@ -133,6 +169,25 @@ if (switchingBuild)
 const args = new URLSearchParams(location.search).getAll('arg');
 const picker = document.getElementById('picker');
 const statusEl = document.getElementById('status');
+// Phones and tablets (?touch=1 or ?touch=0 to say otherwise): touch controls over the table while it plays
+const touchParam = new URLSearchParams(location.search).get('touch');
+const touchDevice = touchParam !== null ? touchParam !== '0' : matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoints > 1;
+// The browser plays sound once a press of its own choosing resumes it (on a phone, a touch as it lifts): each audio
+// context the player makes is resumed on the next press
+const audioContexts = [];
+for (const name of ['AudioContext', 'webkitAudioContext']) {
+   const Base = window[name];
+   if (Base)
+      window[name] = new Proxy(Base, {
+         construct(target, ctorArgs, newTarget) {
+            const context = Reflect.construct(target, ctorArgs, newTarget);
+            audioContexts.push(context);
+            return context;
+         },
+      });
+}
+for (const type of ['pointerup', 'touchend', 'keydown'])
+   window.addEventListener(type, () => audioContexts.forEach(c => c.state !== 'running' && c.resume().catch(() => {})), true);
 var Module = {
    canvas: document.getElementById('canvas'),
    arguments: args,
@@ -158,6 +213,7 @@ var Module = {
       await loadPrefs();
       writeTouchDeviceSettings();
       if (args.length > 0) {
+         showTouch();
          startPlayer(args);
          return;
       }
@@ -516,12 +572,127 @@ async function importFiles(entries) {
    }));
 }
 
+// The touch controls: VPX's default keys, held as long as the touch that presses them. They take every touch, so that
+// none reaches VPX's own touch zones (where a stray one nudges), except while VPX's menu is open (InGameUI.cpp)
+const touchLayer = document.getElementById('touch');
+const holding = new Map(); // A key's code: its key and how many touches hold it down
+function sendKey(code, key, down) {
+   window.dispatchEvent(new KeyboardEvent(down ? 'keydown' : 'keyup', { code, key, bubbles: true, cancelable: true }));
+}
+function holdKey(code, key, down) {
+   const was = holding.get(code)?.count || 0;
+   const count = Math.max(0, was + (down ? 1 : -1));
+   holding.set(code, { key, count });
+   if (!was && count)
+      sendKey(code, key, true);
+   else if (was && !count)
+      sendKey(code, key, false);
+}
+// Every key let go: a touch the browser takes over never lifts
+function letGoKeys() {
+   for (const [code, { key, count }] of holding)
+      if (count)
+         sendKey(code, key, false);
+   holding.clear();
+   halfTouches.clear();
+   for (const pad of touchLayer.querySelectorAll('.down'))
+      pad.classList.remove('down');
+}
+let wakeLock = null;
+function keepAwake() {
+   if (!wakeLock && navigator.wakeLock && document.visibilityState === 'visible')
+      navigator.wakeLock.request('screen').then((lock) => {
+         wakeLock = lock;
+         lock.addEventListener('release', () => (wakeLock = null));
+      }).catch(() => {});
+}
+const halfTouches = new Map(); // A touch on the table: the flipper key its half holds
+touchLayer.addEventListener('pointerdown', (e) => {
+   if (e.target !== touchLayer)
+      return;
+   e.preventDefault();
+   touchLayer.setPointerCapture(e.pointerId);
+   const code = e.clientX < innerWidth / 2 ? 'ShiftLeft' : 'ShiftRight';
+   halfTouches.set(e.pointerId, code);
+   holdKey(code, 'Shift', true);
+   keepAwake();
+});
+for (const type of ['pointerup', 'pointercancel', 'lostpointercapture'])
+   touchLayer.addEventListener(type, (e) => {
+      const code = halfTouches.get(e.pointerId);
+      if (code === undefined)
+         return;
+      halfTouches.delete(e.pointerId);
+      holdKey(code, 'Shift', false);
+   });
+for (const pad of touchLayer.querySelectorAll('.pad[data-code]')) {
+   const { code, key } = pad.dataset;
+   const pointers = new Set();
+   pad.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      pad.setPointerCapture(e.pointerId);
+      pointers.add(e.pointerId);
+      if (pointers.size === 1) {
+         pad.classList.add('down');
+         holdKey(code, key, true);
+      }
+      keepAwake();
+   });
+   for (const type of ['pointerup', 'pointercancel', 'lostpointercapture'])
+      pad.addEventListener(type, (e) => {
+         if (!pointers.delete(e.pointerId) || pointers.size > 0)
+            return;
+         pad.classList.remove('down');
+         holdKey(code, key, false);
+      });
+}
+// No scrolling, zooming or callouts from the layer, and its touches go no further
+for (const type of ['touchstart', 'touchmove', 'touchend', 'touchcancel'])
+   touchLayer.addEventListener(type, (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+   }, { passive: false });
+touchLayer.addEventListener('contextmenu', (e) => e.preventDefault());
+// Tablets and Android phones have full screen (an iPhone has its Home Screen instead)
+const touchFull = document.getElementById('touchFull');
+touchFull.hidden = !document.fullscreenEnabled;
+touchFull.addEventListener('pointerup', () => {
+   if (document.fullscreenElement)
+      document.exitFullscreen().catch(() => {});
+   else
+      document.documentElement.requestFullscreen().catch(() => {});
+});
+// VPX's menu open or closed (InGameUI::Update): the layer stands aside for it
+Module.onInGameUI = (open) => {
+   touchLayer.classList.toggle('menu', open);
+   document.getElementById('touchMenu').textContent = open ? 'Back to table' : 'Menu';
+   if (open)
+      letGoKeys();
+};
+window.addEventListener('blur', letGoKeys);
+document.addEventListener('visibilitychange', () => {
+   if (document.hidden)
+      letGoKeys();
+});
+if (touchDevice) {
+   document.getElementById('touchHelp').hidden = false;
+   document.getElementById('homeHelp').hidden = !(/iPhone|iPod/.test(navigator.userAgent) && !navigator.standalone);
+}
+function showTouch() {
+   if (!touchDevice)
+      return;
+   touchLayer.classList.add('shown');
+   setTimeout(() => touchLayer.querySelectorAll('.hint').forEach(h => h.classList.add('gone')), 6000);
+}
+
 let started = false;
 function play(table) {
    if (started)
       return;
    started = true;
    picker.classList.remove('shown');
+   showTouch();
    document.getElementById('canvas').focus();
    startPlayer(['-play', table]);
 }
